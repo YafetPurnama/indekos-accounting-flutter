@@ -46,3 +46,6 @@ app.*.map.json
 analyze_output.txt
 analyze_output2.txt
 analyze_result.txt
+
+# Firebase Secret Key
+android/app/google-services.json

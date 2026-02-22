@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/supabase_service.dart';
+import '../../models/kamar_model.dart';
+import '../../models/penyewa_model.dart';
+import '../../models/tagihan_model.dart';
 
-/// Dashboard untuk Penyewa.
-/// Mendukung pull-to-refresh dan auto-sync dari Firebase.
+/// Dashboard Penyewa
 class TenantDashboardScreen extends StatefulWidget {
   const TenantDashboardScreen({super.key});
 
@@ -14,12 +18,19 @@ class TenantDashboardScreen extends StatefulWidget {
 }
 
 class _TenantDashboardScreenState extends State<TenantDashboardScreen> {
+  Penyewa? _penyewa;
+  Kamar? _kamar;
+  Tagihan? _tagihanAktif;
+  bool _isLoadingData = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = Provider.of<AuthProvider>(context, listen: false);
       auth.addListener(_onAuthChanged);
+
+      _loadTenantData();
     });
   }
 
@@ -28,16 +39,14 @@ class _TenantDashboardScreenState extends State<TenantDashboardScreen> {
     final auth = Provider.of<AuthProvider>(context, listen: false);
 
     if (auth.user == null) {
-      // Force logout — navigasi ke login
       Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
       return;
     }
 
-    // Jika role berubah dari penyewa → pemilik, pindah ke dashboard yang sesuai
-    if (auth.user!.role == 'pemilik') {
+    //Perubahan penyewa → pemilik/admin
+    if (auth.user!.role == 'pemilik' || auth.user!.role == 'admin') {
       Navigator.pushReplacementNamed(context, '/owner-dashboard');
     } else if (auth.user!.role == null || auth.user!.role!.isEmpty) {
-      // Role dihapus → kembali ke role selection
       Navigator.pushReplacementNamed(context, '/role-select');
     }
   }
@@ -51,10 +60,38 @@ class _TenantDashboardScreenState extends State<TenantDashboardScreen> {
     super.dispose();
   }
 
+  /// Load data tenant
+  Future<void> _loadTenantData() async {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    if (auth.user == null) return;
+
+    setState(() => _isLoadingData = true);
+
+    try {
+      _penyewa = await SupabaseService.fetchPenyewaByUserId(auth.user!.uid);
+
+      if (_penyewa != null) {
+        final results = await Future.wait([
+          _penyewa!.kamarId != null
+              ? SupabaseService.fetchKamarById(_penyewa!.kamarId!)
+              : Future.value(null),
+          SupabaseService.fetchTagihanAktifByPenyewaId(_penyewa!.id),
+        ]);
+        _kamar = results[0] as Kamar?;
+        _tagihanAktif = results[1] as Tagihan?;
+      }
+    } catch (e) {
+      debugPrint('🔥 Error loading tenant data: $e');
+    }
+
+    if (mounted) setState(() => _isLoadingData = false);
+  }
+
   /// Handle pull-to-refresh
   Future<void> _handleRefresh() async {
     final auth = Provider.of<AuthProvider>(context, listen: false);
     await auth.refreshUserData();
+    await _loadTenantData();
   }
 
   @override
@@ -148,8 +185,8 @@ class _TenantDashboardScreenState extends State<TenantDashboardScreen> {
                     ),
                     const SizedBox(height: 16),
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(8),
@@ -191,19 +228,34 @@ class _TenantDashboardScreenState extends State<TenantDashboardScreen> {
                     _InfoRow(
                       icon: Icons.meeting_room_rounded,
                       label: 'Nomor Kamar',
-                      value: '—',
+                      value: _isLoadingData
+                          ? '...'
+                          : _kamar?.nomorKamar ?? 'Belum ada',
                     ),
                     const Divider(height: 24),
                     _InfoRow(
                       icon: Icons.calendar_month_rounded,
                       label: 'Jatuh Tempo',
-                      value: '—',
+                      value: _isLoadingData
+                          ? '...'
+                          : _tagihanAktif != null
+                              ? DateFormat('dd MMM yyyy')
+                                  .format(_tagihanAktif!.jatuhTempo)
+                              : 'Tidak ada',
                     ),
                     const Divider(height: 24),
                     _InfoRow(
                       icon: Icons.payments_rounded,
                       label: 'Status Pembayaran',
-                      value: '—',
+                      value: _isLoadingData
+                          ? '...'
+                          : _tagihanAktif != null
+                              ? (_tagihanAktif!.statusLunas
+                                  ? 'Lunas \u2705'
+                                  : (_tagihanAktif!.isMenunggak
+                                      ? 'Menunggak \u26a0\ufe0f'
+                                      : 'Belum Lunas'))
+                              : 'Tidak ada tagihan',
                     ),
                   ],
                 ),
@@ -214,7 +266,8 @@ class _TenantDashboardScreenState extends State<TenantDashboardScreen> {
               // ── Sync Info ──────────────────────────────────
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
                   color: AppColors.secondary.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(12),
@@ -313,7 +366,6 @@ class _TenantDashboardScreenState extends State<TenantDashboardScreen> {
   }
 }
 
-/// Baris informasi dengan icon
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;

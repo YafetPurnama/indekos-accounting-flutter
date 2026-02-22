@@ -3,12 +3,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/app_user.dart';
 import '../services/auth_service.dart';
+import '../services/supabase_service.dart';
 
 /// Global navigator key — digunakan untuk navigasi dari Provider
-/// tanpa perlu BuildContext (misalnya saat force logout).
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-/// For mengelola state autentikasi di seluruh aplikasi
+/// state autentikasi di seluruh aplikasi
 /// Menggunakan ChangeNotifier agar widget bisa reactive terhadap perubahan state.
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -18,7 +18,6 @@ class AuthProvider extends ChangeNotifier {
   String? _errorMessage;
   bool _isDisposed = false;
 
-  /// Stream subscriptions untuk real-time sync
   StreamSubscription<AppUser?>? _userDataSubscription;
   StreamSubscription<User?>? _authStateSubscription;
 
@@ -60,7 +59,6 @@ class AuthProvider extends ChangeNotifier {
     _setLoading(false);
   }
 
-  // ── Login dengan Google ────────────────────────────────────
   Future<bool> signInWithGoogle() async {
     _setLoading(true);
     _errorMessage = null;
@@ -69,16 +67,78 @@ class AuthProvider extends ChangeNotifier {
       final appUser = await _authService.signInWithGoogle();
 
       if (appUser == null) {
-        // User membatalkan login
         _setLoading(false);
         return false;
       }
 
-      _user = appUser;
+      // Cek apakah user terdaftar di Supabase (db_indekos)
+      final supabaseUser = await SupabaseService.findUserByEmail(appUser.email);
 
-      // Mulai real-time listeners setelah login berhasil
+      if (supabaseUser == null) {
+        await _authService.signOut();
+        _user = null;
+        _errorMessage =
+            'Akun belum terdaftar. Hubungi pemilik indekos untuk didaftarkan.';
+        _setLoading(false);
+        return false;
+      }
+
+      // User terdaftar — gunakan role dari Supabase
+      final supabaseRole = supabaseUser['role'] as String? ?? '';
+      _user = appUser.copyWith(
+          role: supabaseRole.isNotEmpty ? supabaseRole : appUser.role);
+
+      // Mulai real-time listeners
       _startUserDataStream(appUser.uid);
       _startAuthStateListener();
+
+      // Sync Firebase UID ke Supabase jika belum ada
+      try {
+        await SupabaseService.syncUser(
+          firebaseUid: appUser.uid,
+          email: appUser.email,
+          nama: appUser.displayName,
+          role: supabaseRole.isNotEmpty ? supabaseRole : (appUser.role ?? ''),
+        );
+      } catch (e) {
+        debugPrint('⚠️ Supabase sync gagal (non-blocking): $e');
+      }
+
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _errorMessage = 'Login gagal. Periksa koneksi internet Anda.';
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  // ── Login Manual ───────────
+  Future<bool> signInWithEmail(String email, String password) async {
+    _setLoading(true);
+    _errorMessage = null;
+
+    try {
+      final userData = await SupabaseService.signInWithEmail(
+        email: email,
+        password: password,
+      );
+
+      if (userData == null) {
+        _errorMessage = 'Email atau password salah.';
+        _setLoading(false);
+        return false;
+      }
+      _user = AppUser(
+        uid: userData['id_user'] as String,
+        email: userData['email'] as String? ?? '',
+        displayName: userData['nama'] as String? ?? '',
+        photoUrl: null,
+        role: userData['role'] as String?,
+        createdAt: userData['created_at'] != null
+            ? DateTime.parse(userData['created_at'] as String)
+            : DateTime.now(),
+      );
 
       _setLoading(false);
       return true;
@@ -90,7 +150,6 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // ── Simpan Role ────────────────────────────────────────────
-  /// Dipanggil setelah user memilih role (Pemilik / Penyewa)
   Future<void> setRole(String role) async {
     if (_user == null) return;
 
@@ -100,6 +159,18 @@ class AuthProvider extends ChangeNotifier {
     try {
       await _authService.saveUserRole(_user!.uid, role);
       _user = _user!.copyWith(role: role);
+
+      // Sinkronisasi role terbaru ke Supabase
+      try {
+        await SupabaseService.syncUser(
+          firebaseUid: _user!.uid,
+          email: _user!.email,
+          nama: _user!.displayName,
+          role: role,
+        );
+      } catch (e) {
+        debugPrint('⚠️ Supabase role sync gagal (non-blocking): $e');
+      }
     } catch (e) {
       _errorMessage = 'Gagal menyimpan role. Coba lagi.';
     }

@@ -49,3 +49,9 @@ analyze_result.txt
 
 # Firebase Secret Key
 android/app/google-services.json
+
+# 🔒 Supabase
+.env
+
+# Local SDK paths (berbeda per PC)
+android/local.properties

@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // NEW
 
 // Core
 import 'core/theme/app_theme.dart';
+import 'core/constants/supabase_config.dart';
 
 // Providers
 import 'providers/auth_provider.dart';
+import 'providers/kamar_provider.dart';
 
 // Screens
 import 'screens/splash/splash_screen.dart';
@@ -17,11 +22,23 @@ import 'screens/dashboard/tenant_dashboard_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  //First time dahulu
+  await dotenv.load(fileName: ".env");
+
+  // Inisialisasi Firebase
   await Firebase.initializeApp();
+
+  // Inisialisasi Supabase
+  await Supabase.initialize(
+    url: SupabaseConfig.url,
+    anonKey: SupabaseConfig.anonKey,
+  );
+
   runApp(const SiaIndekosApp());
 }
 
-/// Root widget aplikasi SIA Indekos Mobile.
+/// Root widget apps Mobile.
 class SiaIndekosApp extends StatelessWidget {
   const SiaIndekosApp({super.key});
 
@@ -36,6 +53,7 @@ class SiaIndekosApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => KamarProvider()),
       ],
       child: MaterialApp(
         title: 'SIA Indekos',
@@ -45,7 +63,7 @@ class SiaIndekosApp extends StatelessWidget {
         // Global navigator key — untuk force logout dari AuthProvider
         navigatorKey: navigatorKey,
 
-        // Halaman awal: Splash Screen
+        // Hoem screen
         home: const SplashScreen(),
 
         // Named Routes

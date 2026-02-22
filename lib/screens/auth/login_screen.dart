@@ -4,9 +4,25 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../providers/auth_provider.dart';
 
-/// Autentikasigoolge
-class LoginScreen extends StatelessWidget {
+/// Halaman Login
+class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _obscurePassword = true;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -18,43 +34,51 @@ class LoginScreen extends StatelessWidget {
           gradient: AppColors.loginGradient,
         ),
         child: SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Column(
-              children: [
-                const Spacer(flex: 2),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: MediaQuery.of(context).size.height -
+                    MediaQuery.of(context).padding.top -
+                    MediaQuery.of(context).padding.bottom,
+              ),
+              child: IntrinsicHeight(
+                child: Column(
+                  children: [
+                    const SizedBox(height: 48),
 
-                // ──----------------- Logo & Branding ─────────────────────────
-                _buildLogo(),
-                const SizedBox(height: 16),
-                Text(
-                  'SIA Indekos',
-                  style: AppTextStyles.h1.copyWith(
-                    color: Colors.white,
-                    fontSize: 32,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Sistem Informasi Akuntansi\n& Manajemen Keuangan Indekos',
-                  textAlign: TextAlign.center,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: Colors.white.withOpacity(0.7),
-                    fontSize: 14,
-                    height: 1.6,
-                  ),
-                ),
+                    // ── Logo & Branding ───────────────────────
+                    _buildLogo(),
+                    const SizedBox(height: 16),
+                    Text(
+                      'SIA Indekos',
+                      style: AppTextStyles.h1.copyWith(
+                        color: Colors.white,
+                        fontSize: 32,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Sistem Informasi Akuntansi\n& Manajemen Keuangan Indekos',
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.white.withOpacity(0.7),
+                        fontSize: 14,
+                        height: 1.6,
+                      ),
+                    ),
 
-                const Spacer(flex: 2),
+                    const SizedBox(height: 40),
 
-                // ── Tombol Login ─────────────────────────────
-                Consumer<AuthProvider>(
-                  builder: (context, auth, _) {
-                    return Column(
-                      children: [
-                        // Error message
-                        if (auth.errorMessage != null) ...[
-                          Container(
+                    // ── Error Message ─────────────────────────
+                    Consumer<AuthProvider>(
+                      builder: (context, auth, _) {
+                        if (auth.errorMessage == null) {
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color:
@@ -84,36 +108,141 @@ class LoginScreen extends StatelessWidget {
                               ],
                             ),
                           ),
-                          const SizedBox(height: 16),
-                        ],
+                        );
+                      },
+                    ),
 
-                        // Google Sign-In Button
-                        _GoogleSignInButton(
-                          isLoading: auth.isLoading,
-                          onPressed: () => _handleGoogleSignIn(context),
+                    // ── Form Email & Password ────────────────
+                    _buildEmailField(),
+                    const SizedBox(height: 14),
+                    _buildPasswordField(),
+                    const SizedBox(height: 20),
+
+                    // ── Tombol Login Manual ───────────────────
+                    Consumer<AuthProvider>(
+                      builder: (context, auth, _) {
+                        return SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: ElevatedButton(
+                            onPressed:
+                                auth.isLoading ? null : _handleEmailLogin,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: AppColors.primary,
+                              elevation: 4,
+                              shadowColor: Colors.black.withOpacity(0.2),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: auth.isLoading
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                          AppColors.primary),
+                                    ),
+                                  )
+                                : Text(
+                                    'Login',
+                                    style: AppTextStyles.labelLarge.copyWith(
+                                      color: AppColors.primary,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                          ),
+                        );
+                      },
+                    ),
+
+                    const SizedBox(height: 28),
+
+                    // ── Divider "atau" ────────────────────────
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Divider(
+                            color: Colors.white.withOpacity(0.3),
+                            thickness: 1,
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            'atau',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: Colors.white.withOpacity(0.6),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Divider(
+                            color: Colors.white.withOpacity(0.3),
+                            thickness: 1,
+                          ),
                         ),
                       ],
-                    );
-                  },
-                ),
+                    ),
 
-                const Spacer(flex: 1),
+                    const SizedBox(height: 28),
 
-                // ── Footer ──────────────────────────────────
-                Text(
-                  'Tugas Akhir — Universitas Widya Kartika',
-                  style: AppTextStyles.caption.copyWith(
-                    color: Colors.white.withOpacity(0.4),
-                  ),
+                    // ── Google Sign-In Button ─────────────────
+                    Consumer<AuthProvider>(
+                      builder: (context, auth, _) {
+                        return _GoogleSignInButton(
+                          isLoading: auth.isLoading,
+                          onPressed: () => _handleGoogleSignIn(context),
+                        );
+                      },
+                    ),
+
+                    const Spacer(),
+
+                    // ── Footer ────────────────────────────────
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 24, top: 16),
+                      // child: Text(
+                      //   'Tugas Akhir — Universitas Widya Kartika',
+                      //   style: AppTextStyles.caption.copyWith(
+                      //     color: Colors.white.withOpacity(0.4),
+                      //   ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Versi 1.0.0',
+                            style: AppTextStyles.caption.copyWith(
+                              color: Colors.white.withOpacity(0.6),
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Tugas Akhir — Universitas Widya Kartika',
+                            style: AppTextStyles.caption.copyWith(
+                              color: Colors.white.withOpacity(0.4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 24),
-              ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
+
+  // ── Widget Builders ───────────────────────────────────────
 
   Widget _buildLogo() {
     return Container(
@@ -134,11 +263,6 @@ class LoginScreen extends StatelessWidget {
           ),
         ],
       ),
-      // child: const Icon(
-      //   Icons.apartment_rounded,
-      //   size: 60,
-      //   color: Colors.white,
-      // ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(22),
         child: Image.asset(
@@ -151,6 +275,128 @@ class LoginScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildEmailField() {
+    return TextFormField(
+      controller: _emailController,
+      keyboardType: TextInputType.emailAddress,
+      style: const TextStyle(color: Colors.white, fontSize: 15),
+      decoration: InputDecoration(
+        prefixIcon: Icon(
+          Icons.email_outlined,
+          color: Colors.white.withOpacity(0.7),
+          size: 20,
+        ),
+        hintText: 'Email',
+        hintStyle: TextStyle(
+          color: Colors.white.withOpacity(0.4),
+          fontSize: 15,
+        ),
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.1),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(
+            color: Colors.white.withOpacity(0.2),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(
+            color: Colors.white,
+            width: 1.5,
+          ),
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      ),
+    );
+  }
+
+  Widget _buildPasswordField() {
+    return TextFormField(
+      controller: _passwordController,
+      obscureText: _obscurePassword,
+      style: const TextStyle(color: Colors.white, fontSize: 15),
+      decoration: InputDecoration(
+        prefixIcon: Icon(
+          Icons.lock_outline_rounded,
+          color: Colors.white.withOpacity(0.7),
+          size: 20,
+        ),
+        suffixIcon: IconButton(
+          icon: Icon(
+            _obscurePassword
+                ? Icons.visibility_off_rounded
+                : Icons.visibility_rounded,
+            color: Colors.white.withOpacity(0.5),
+            size: 20,
+          ),
+          onPressed: () {
+            setState(() => _obscurePassword = !_obscurePassword);
+          },
+        ),
+        hintText: 'Password',
+        hintStyle: TextStyle(
+          color: Colors.white.withOpacity(0.4),
+          fontSize: 15,
+        ),
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.1),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(
+            color: Colors.white.withOpacity(0.2),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(
+            color: Colors.white,
+            width: 1.5,
+          ),
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      ),
+    );
+  }
+
+  // ── Handlers ──────────────────────────────────────────────
+
+  Future<void> _handleEmailLogin() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      auth.clearError();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Silakan isi email dan password.'),
+          backgroundColor: AppColors.statusMenunggak,
+        ),
+      );
+      return;
+    }
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final success = await authProvider.signInWithEmail(email, password);
+
+    if (!mounted) return;
+
+    if (success) {
+      _navigateAfterLogin(authProvider);
+    }
+  }
+
   Future<void> _handleGoogleSignIn(BuildContext context) async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final success = await authProvider.signInWithGoogle();
@@ -158,19 +404,24 @@ class LoginScreen extends StatelessWidget {
     if (!context.mounted) return;
 
     if (success) {
-      if (authProvider.hasRole) {
-        final route = authProvider.role == 'pemilik'
-            ? '/owner-dashboard'
-            : '/tenant-dashboard';
-        Navigator.pushReplacementNamed(context, route);
-      } else {
-        Navigator.pushReplacementNamed(context, '/role-select');
-      }
+      _navigateAfterLogin(authProvider);
+    }
+  }
+
+  void _navigateAfterLogin(AuthProvider authProvider) {
+    if (authProvider.hasRole) {
+      final role = authProvider.role;
+      final route = (role == 'pemilik' || role == 'admin')
+          ? '/owner-dashboard'
+          : '/tenant-dashboard';
+      Navigator.pushReplacementNamed(context, route);
+    } else {
+      Navigator.pushReplacementNamed(context, '/role-select');
     }
   }
 }
 
-/// Sign in tombol
+/// Tombol Sign in with Google
 class _GoogleSignInButton extends StatelessWidget {
   final bool isLoading;
   final VoidCallback onPressed;
@@ -184,53 +435,67 @@ class _GoogleSignInButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      height: 56,
-      child: ElevatedButton(
+      height: 52,
+      child: OutlinedButton(
         onPressed: isLoading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.white,
-          foregroundColor: AppColors.textPrimary,
-          elevation: 4,
-          shadowColor: Colors.black.withOpacity(0.2),
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(
+            color: Colors.white.withOpacity(0.4),
+            width: 1.5,
+          ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
           ),
         ),
         child: isLoading
-            ? const SizedBox(
-                width: 24,
-                height: 24,
+            ? SizedBox(
+                width: 22,
+                height: 22,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.5,
-                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.white.withOpacity(0.8),
+                  ),
                 ),
               )
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Google "G" icon (manual paint)
+                  // Container(
+                  //   width: 24,
+                  //   height: 24,
+                  //   decoration: BoxDecoration(
+                  //     borderRadius: BorderRadius.circular(4),
+                  //   ),
+                  //   child: const Text(
+                  //     'G',
+                  //     textAlign: TextAlign.center,
+                  //     style: TextStyle(
+                  //       fontSize: 20,
+                  //       fontWeight: FontWeight.w700,
+                  //       color: Colors.white,
+                  //       height: 1.2,
+                  //     ),
+                  //   ),
+                  // ),
                   Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(4),
+                    width: 28,
+                    height: 28,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
                     ),
-                    child: const Text(
-                      'G',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF4285F4),
-                        height: 1.2,
-                      ),
+                    padding: const EdgeInsets.all(5),
+                    child: Image.asset(
+                      'assets/images/logo-google.png',
+                      fit: BoxFit.contain,
                     ),
                   ),
                   const SizedBox(width: 12),
                   Text(
                     'Sign in with Google',
                     style: AppTextStyles.labelLarge.copyWith(
-                      color: AppColors.textPrimary,
+                      color: Colors.white,
                       fontSize: 15,
                     ),
                   ),

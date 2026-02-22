@@ -59,7 +59,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     if (authProvider.isAuthenticated) {
       if (authProvider.hasRole) {
-        final route = authProvider.role == 'pemilik'
+        final route = (authProvider.role == 'pemilik' || authProvider.role == 'admin')
             ? '/owner-dashboard'
             : '/tenant-dashboard';
         Navigator.pushReplacementNamed(context, route);

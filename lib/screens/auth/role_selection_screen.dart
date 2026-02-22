@@ -61,7 +61,21 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                   onTap: () => setState(() => _selectedRole = 'pemilik'),
                 ),
 
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
+
+                // ── Card Admin ──────────────────────────────
+                _RoleCard(
+                  title: 'Admin',
+                  subtitle:
+                      'Pantau data kamar, pengguna,\n& statistik dashboard',
+                  icon: Icons.manage_accounts_rounded,
+                  roleValue: 'admin',
+                  isSelected: _selectedRole == 'admin',
+                  gradientColors: const [Color(0xFFFF8F00), Color(0xFFE65100)],
+                  onTap: () => setState(() => _selectedRole = 'admin'),
+                ),
+
+                const SizedBox(height: 16),
 
                 // ── Card Penyewa ────────────────────────────
                 _RoleCard(
@@ -134,8 +148,9 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
 
     if (!context.mounted) return;
 
-    final route =
-        _selectedRole == 'pemilik' ? '/owner-dashboard' : '/tenant-dashboard';
+    final route = (_selectedRole == 'pemilik' || _selectedRole == 'admin')
+        ? '/owner-dashboard'
+        : '/tenant-dashboard';
     Navigator.pushReplacementNamed(context, route);
   }
 }

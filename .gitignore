@@ -53,5 +53,5 @@ android/app/google-services.json
 # 🔒 Supabase
 .env
 
-# Local SDK paths (berbeda per PC)
+# Local SDK paths
 android/local.properties

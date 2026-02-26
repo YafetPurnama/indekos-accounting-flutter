@@ -36,33 +36,107 @@ class _UserScreenState extends State<UserScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: RefreshIndicator(
-        onRefresh: _loadData,
-        color: AppColors.primary,
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _userList.isEmpty
-                ? _buildEmptyState()
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                    itemCount: _userList.length,
-                    itemBuilder: (context, index) =>
-                        _buildUserCard(_userList[index]),
+    final listPenyewa =
+        _userList.where((u) => u['role'] == 'penyewa').toList();
+    final listAdmin = _userList
+        .where((u) => u['role'] == 'admin' || u['role'] == 'pemilik')
+        .toList();
+
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        body: Column(
+          children: [
+            // ── TabBar ──────────────────────────────────────
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              decoration: BoxDecoration(
+                color: AppColors.scaffoldBackground,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: TabBar(
+                indicator: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                indicatorSize: TabBarIndicatorSize.tab,
+                labelColor: Colors.white,
+                unselectedLabelColor: AppColors.textSecondary,
+                labelStyle: AppTextStyles.bodySmall.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+                unselectedLabelStyle: AppTextStyles.bodySmall.copyWith(
+                  fontSize: 13,
+                ),
+                splashBorderRadius: BorderRadius.circular(12),
+                padding: const EdgeInsets.all(4),
+                tabs: const [
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.person_outline, size: 18),
+                        SizedBox(width: 6),
+                        Text('Penyewa'),
+                      ],
+                    ),
                   ),
-      ),
-      floatingActionButton: widget.readOnly
-          ? null
-          : FloatingActionButton(
-              backgroundColor: AppColors.primary,
-              onPressed: () => _showFormSheet(context),
-              child: const Icon(Icons.person_add, color: Colors.white),
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.admin_panel_settings_outlined, size: 18),
+                        SizedBox(width: 6),
+                        Text('Admin'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(height: 8),
+            // ── TabBarView ──────────────────────────────────
+            Expanded(
+              child: TabBarView(
+                children: [
+                  _buildUserList(listPenyewa),
+                  _buildUserList(listAdmin),
+                ],
+              ),
+            ),
+          ],
+        ),
+        floatingActionButton: widget.readOnly
+            ? null
+            : FloatingActionButton(
+                backgroundColor: AppColors.primary,
+                onPressed: () => _showFormSheet(context),
+                child: const Icon(Icons.person_add, color: Colors.white),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildUserList(List<Map<String, dynamic>> users) {
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      color: AppColors.primary,
+      child: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : users.isEmpty
+              ? _buildEmptyState()
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+                  itemCount: users.length,
+                  itemBuilder: (context, index) => _buildUserCard(users[index]),
+                ),
     );
   }
 
   Widget _buildEmptyState() {
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       children: [
         SizedBox(height: MediaQuery.of(context).size.height * 0.25),
         Center(
@@ -95,6 +169,8 @@ class _UserScreenState extends State<UserScreen> {
             : AppColors.secondary;
     final nama = (user['nama'] as String?) ?? 'Tanpa Nama';
     final email = (user['email'] as String?) ?? '-';
+    final status = (user['status'] as String?) ?? 'aktif';
+    final isAktif = status == 'aktif';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -150,6 +226,28 @@ class _UserScreenState extends State<UserScreen> {
                     ],
                   ),
                 ),
+                // Status badge
+                Container(
+                  margin: const EdgeInsets.only(right: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: (isAktif
+                            ? AppColors.statusLunas
+                            : AppColors.textHint)
+                        .withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    isAktif ? 'Aktif' : 'Nonaktif',
+                    style: TextStyle(
+                        color: isAktif
+                            ? AppColors.statusLunas
+                            : AppColors.textHint,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ),
                 // Role badge
                 Container(
                   padding:
@@ -184,6 +282,7 @@ class _UserScreenState extends State<UserScreen> {
     final emailCtrl = TextEditingController(text: user?['email'] ?? '');
     final passwordCtrl = TextEditingController(text: user?['password'] ?? '');
     String selectedRole = (user?['role'] as String?) ?? 'penyewa';
+    bool isStatusAktif = (user?['status'] as String? ?? 'aktif') == 'aktif';
 
     showModalBottomSheet(
       context: context,
@@ -255,6 +354,38 @@ class _UserScreenState extends State<UserScreen> {
                     );
                   }).toList(),
                 ),
+                const SizedBox(height: 14),
+                // ── Status Toggle ──
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Status',
+                        style: AppTextStyles.bodySmall
+                            .copyWith(fontWeight: FontWeight.w600)),
+                    Row(
+                      children: [
+                        Text(
+                          isStatusAktif ? 'Aktif' : 'Tidak Aktif',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isStatusAktif
+                                ? AppColors.statusLunas
+                                : AppColors.textHint,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Switch(
+                          value: isStatusAktif,
+                          activeColor: AppColors.statusLunas,
+                          onChanged: (val) {
+                            setSheetState(() => isStatusAktif = val);
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 24),
                 Row(
                   children: [
@@ -286,6 +417,7 @@ class _UserScreenState extends State<UserScreen> {
                           emailCtrl.text,
                           passwordCtrl.text,
                           selectedRole,
+                          isStatusAktif ? 'aktif' : 'tidak aktif',
                           editId: user?['id_user'] as String?,
                         ),
                         style: ElevatedButton.styleFrom(
@@ -340,6 +472,7 @@ class _UserScreenState extends State<UserScreen> {
 
   Future<void> _saveUser(
       BuildContext ctx, String nama, String email, String password, String role,
+      String status,
       {String? editId}) async {
     if (nama.trim().isEmpty || email.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -356,6 +489,7 @@ class _UserScreenState extends State<UserScreen> {
       'nama': nama.trim(),
       'email': email.trim(),
       'role': role,
+      'status': status,
     };
     if (password.trim().isNotEmpty) data['password'] = password.trim();
 

@@ -59,6 +59,39 @@ class Tagihan {
   /// Apakah tagihan masih dalam status pending (belum lunas, belum lewat)
   bool get isPending => !statusLunas && !DateTime.now().isAfter(jatuhTempo);
 
+  // ── Perhitungan Denda Harian ─────────────────────────────────
+
+  /// Alias: denda_keterlambatan di database sekarang dianggap sebagai tarif per hari
+  double get dendaPerHari => dendaKeterlambatan;
+
+  /// Jumlah hari keterlambatan (jika belum lunas dan sudah lewat jatuh tempo)
+  int get overdueDays {
+    if (statusLunas) return 0; // Jika sudah lunas, denda berhenti bertambah
+    final now = DateTime.now();
+    if (!now.isAfter(jatuhTempo)) return 0;
+    // Hitung selisih hari (hitung dari jam 00:00 agar genap)
+    final start = DateTime(jatuhTempo.year, jatuhTempo.month, jatuhTempo.day);
+    final end = DateTime(now.year, now.month, now.day);
+    return end.difference(start).inDays;
+  }
+
+  /// Akumulasi denda
+  /// - Jika masih berjalan: (hari terlambat * tarif per hari)
+  /// - Jika sudah lunas: selisih dari total_tagihan_akhir - nominal_kamar
+  ///   (karena saat klik Lunas, total_tagihan di DB akan di-freeze)
+  double get totalAkumulasiDenda {
+    if (statusLunas) {
+      final dendaFix = totalTagihan - nominalKamar;
+      return dendaFix > 0 ? dendaFix : 0;
+    }
+    return overdueDays * dendaPerHari;
+  }
+
+  double get totalBerjalan {
+    if (statusLunas) return totalTagihan;
+    return nominalKamar + totalAkumulasiDenda;
+  }
+
   Tagihan copyWith({
     String? id,
     String? penyewaId,

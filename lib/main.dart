@@ -1,5 +1,7 @@
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -22,6 +24,7 @@ import 'screens/dashboard/tenant_dashboard_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting('id_ID', null);
 
   //First time dahulu
   await dotenv.load(fileName: ".env");

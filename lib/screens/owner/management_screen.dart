@@ -3,8 +3,9 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import 'branch_screen.dart';
 import 'kamar_screen.dart';
+import 'fasilitas_screen.dart';
 
-/// Wrapper screen mix page Cabang & Kamae
+/// Wrapper screen: Page Cabang, Kamar & Fasilitas
 class ManagementScreen extends StatelessWidget {
   final bool readOnly;
   const ManagementScreen({super.key, this.readOnly = false});
@@ -12,7 +13,7 @@ class ManagementScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(
         children: [
           // ── TabBar ──────────────────────────────────────
@@ -60,6 +61,17 @@ class ManagementScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+                Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.room_preferences_rounded, size: 18),
+                      // Icon(Icons.wifi_rounded, size: 16),
+                      SizedBox(width: 6),
+                      Text('Fasilitas'),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -69,6 +81,7 @@ class ManagementScreen extends StatelessWidget {
               children: [
                 BranchScreen(readOnly: readOnly),
                 KamarScreen(readOnly: readOnly),
+                FasilitasScreen(readOnly: readOnly),
               ],
             ),
           ),

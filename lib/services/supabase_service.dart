@@ -1,12 +1,14 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/kamar_model.dart';
 import '../models/branch_model.dart';
+import '../models/fasilitas_model.dart';
 import '../models/penyewa_model.dart';
 import '../models/tagihan_model.dart';
 import '../models/pembayaran_model.dart';
 
-/// Service utama untuk operasi CRUD ke Supabase (PostgreSQL).
+/// Service utama untuk operasi CRUD
 class SupabaseService {
   SupabaseService._();
 
@@ -82,9 +84,9 @@ class SupabaseService {
     }
   }
 
-  /// Tambah user baru
   static Future<void> addUser(Map<String, dynamic> data) async {
     try {
+      data.putIfAbsent('status', () => 'aktif');
       await _client.from('users').insert(data);
     } catch (e) {
       debugPrint('🔥 ERROR Supabase (addUser): $e');
@@ -210,15 +212,16 @@ class SupabaseService {
   /// Ambil data kamar, opsional filter by branchId
   static Future<List<Kamar>> fetchKamarList({String? branchId}) async {
     try {
+      const select = '*, branch(nama_branch), kamar_fasilitas(fasilitas(*))';
       var query = _client
           .from('kamar')
-          .select('*, branch(nama_branch)')
+          .select(select)
           .order('nomor_kamar', ascending: true);
 
       if (branchId != null) {
         query = _client
             .from('kamar')
-            .select('*, branch(nama_branch)')
+            .select(select)
             .eq('branch_id', branchId)
             .order('nomor_kamar', ascending: true);
       }
@@ -237,6 +240,18 @@ class SupabaseService {
       await _client.from('kamar').insert(data);
     } catch (e) {
       debugPrint('🔥 ERROR Supabase (addKamar): $e');
+      rethrow;
+    }
+  }
+
+  /// Tambah kamar baru dan return id_kamar
+  static Future<String?> addKamarReturning(Map<String, dynamic> data) async {
+    try {
+      final response =
+          await _client.from('kamar').insert(data).select('id_kamar').single();
+      return response['id_kamar'] as String?;
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (addKamarReturning): $e');
       rethrow;
     }
   }
@@ -284,12 +299,260 @@ class SupabaseService {
     }
   }
 
+  /// Cek apakah kamar memiliki penyewa aktif
+  static Future<bool> CekPenyewaAktif(String kamarId) async {
+    try {
+      final response = await _client
+          .from('penyewa')
+          .select('id_penyewa')
+          .eq('kamar_id', kamarId)
+          .eq('status_aktif', true)
+          .isFilter('deleted_at', null);
+      return response.isNotEmpty;
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (CekPenyewaAktif): $e');
+      return false;
+    }
+  }
+
+  /// Hitung jumlah kamar yang terkait branch
+  static Future<int> HitungKamarByCabang(String branchId) async {
+    try {
+      final response = await _client
+          .from('kamar')
+          .select('id_kamar')
+          .eq('branch_id', branchId);
+      return response.length;
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (HitungKamarByCabang): $e');
+      return 0;
+    }
+  }
+
+  /// Ambil statistik dashboard, opsional filter per branch
+  /// Returns: {totalKamar, kamarTerisi, penyewaAktif, tagihanPending, tagihanMenunggak}
+  static Future<Map<String, int>> fetchDashboardStatsByBranch(
+      {String? branchId}) async {
+    try {
+      // 1. Kamar stats
+      var kamarQuery = _client.from('kamar').select('id_kamar, status');
+      if (branchId != null) kamarQuery = kamarQuery.eq('branch_id', branchId);
+      final kamarData = await kamarQuery;
+
+      final totalKamar = kamarData.length;
+      final kamarTerisi =
+          kamarData.where((k) => k['status'] == 'terisi').length;
+
+      // Kumpulkan id_kamar untuk filter penyewa
+      final kamarIds = kamarData.map((k) => k['id_kamar'] as String).toList();
+
+      // 2. Penyewa aktif (filter by kamar_ids jika per branch)
+      int penyewaAktif = 0;
+      List<String> penyewaIds = [];
+      if (kamarIds.isNotEmpty) {
+        var penyewaQuery = _client
+            .from('penyewa')
+            .select('id_penyewa, kamar_id')
+            .eq('status_aktif', true)
+            .isFilter('deleted_at', null);
+        if (branchId != null) {
+          penyewaQuery = penyewaQuery.inFilter('kamar_id', kamarIds);
+        }
+        final penyewaData = await penyewaQuery;
+        penyewaAktif = penyewaData.length;
+        penyewaIds = penyewaData.map((p) => p['id_penyewa'] as String).toList();
+      } else if (branchId == null) {
+        // Global: ambil semua penyewa aktif
+        final penyewaData = await _client
+            .from('penyewa')
+            .select('id_penyewa')
+            .eq('status_aktif', true)
+            .isFilter('deleted_at', null);
+        penyewaAktif = penyewaData.length;
+        penyewaIds = penyewaData.map((p) => p['id_penyewa'] as String).toList();
+      }
+
+      // 3. Tagihan pending & menunggak
+      int tagihanPending = 0;
+      int tagihanMenunggak = 0;
+      final now = DateTime.now().toIso8601String().split('T')[0];
+
+      if (penyewaIds.isNotEmpty) {
+        var tagihanQuery = _client
+            .from('tagihan')
+            .select('id_tagihan, jatuh_tempo')
+            .eq('status_lunas', false);
+        if (branchId != null) {
+          tagihanQuery = tagihanQuery.inFilter('penyewa_id', penyewaIds);
+        }
+        final tagihanData = await tagihanQuery;
+        tagihanPending = tagihanData.length;
+        tagihanMenunggak = tagihanData
+            .where((t) =>
+                t['jatuh_tempo'] != null && t['jatuh_tempo'].compareTo(now) < 0)
+            .length;
+      } else if (branchId == null) {
+        // Global fallback
+        final pendingData = await _client
+            .from('tagihan')
+            .select('id_tagihan, jatuh_tempo')
+            .eq('status_lunas', false);
+        tagihanPending = pendingData.length;
+        tagihanMenunggak = pendingData
+            .where((t) =>
+                t['jatuh_tempo'] != null && t['jatuh_tempo'].compareTo(now) < 0)
+            .length;
+      }
+
+      return {
+        'totalKamar': totalKamar,
+        'kamarTerisi': kamarTerisi,
+        'penyewaAktif': penyewaAktif,
+        'tagihanPending': tagihanPending,
+        'tagihanMenunggak': tagihanMenunggak,
+      };
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchDashboardStatsByBranch): $e');
+      return {
+        'totalKamar': 0,
+        'kamarTerisi': 0,
+        'penyewaAktif': 0,
+        'tagihanPending': 0,
+        'tagihanMenunggak': 0,
+      };
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // ── FASILITAS — Master Data Fasilitas ─────────────────────────
+  // ══════════════════════════════════════════════════════════════
+
+  /// Ambil semua fasilitas (tanpa soft-deleted)
+  static Future<List<Fasilitas>> fetchAllFasilitas() async {
+    try {
+      final response = await _client
+          .from('fasilitas')
+          .select()
+          .isFilter('deleted_at', null)
+          .order('nama_fasilitas', ascending: true);
+      return response.map((json) => Fasilitas.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchAllFasilitas): $e');
+      return [];
+    }
+  }
+
+  /// Ambil kamar yang menggunakan fasilitas tertentu
+  static Future<List<Kamar>> fetchKamarByFasilitas(String fasilitasId) async {
+    try {
+      final response = await _client
+          .from('kamar')
+          .select('*, branch(nama_branch), kamar_fasilitas!inner(fasilitas_id)')
+          .eq('kamar_fasilitas.fasilitas_id', fasilitasId)
+          .order('nomor_kamar', ascending: true);
+      return response.map((json) => Kamar.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchKamarByFasilitas): $e');
+      return [];
+    }
+  }
+
+  /// Hitung penggunaan semua fasilitas (berapa kali setiap fasilitas_id dipakai di kamar_fasilitas)
+  static Future<Map<String, int>> getFasilitasUsageCounts() async {
+    try {
+      final response =
+          await _client.from('kamar_fasilitas').select('fasilitas_id');
+      final Map<String, int> counts = {};
+      for (var row in response) {
+        final fId = row['fasilitas_id'] as String;
+        counts[fId] = (counts[fId] ?? 0) + 1;
+      }
+      return counts;
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (getFasilitasUsageCounts): $e');
+      return {};
+    }
+  }
+
+  /// Tambah fasilitas baru
+  static Future<void> addFasilitas(Map<String, dynamic> data,
+      {String? userId}) async {
+    try {
+      if (userId != null) data['created_by'] = userId;
+      await _client.from('fasilitas').insert(data);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (addFasilitas): $e');
+      rethrow;
+    }
+  }
+
+  /// Update fasilitas
+  static Future<void> updateFasilitas(String id, Map<String, dynamic> data,
+      {String? userId}) async {
+    try {
+      data['updated_at'] = DateTime.now().toUtc().toIso8601String();
+      if (userId != null) data['updated_by'] = userId;
+      await _client.from('fasilitas').update(data).eq('id_fasilitas', id);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (updateFasilitas): $e');
+      rethrow;
+    }
+  }
+
+  static Future<void> deleteFasilitas(String id, {String? userId}) async {
+    try {
+      final data = <String, dynamic>{
+        'deleted_at': DateTime.now().toUtc().toIso8601String(),
+      };
+      if (userId != null) data['updated_by'] = userId;
+      await _client.from('fasilitas').update(data).eq('id_fasilitas', id);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (deleteFasilitas): $e');
+      rethrow;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // ── KAMAR–FASILITAS — Junction Sync ───────────────────────────
+  // ══════════════════════════════════════════════════════════════
+
+  static Future<void> syncKamarFasilitas(
+      String kamarId, List<String> fasilitasIds) async {
+    try {
+      await _client.from('kamar_fasilitas').delete().eq('kamar_id', kamarId);
+
+      // Insert new
+      if (fasilitasIds.isNotEmpty) {
+        final rows = fasilitasIds
+            .map((fId) => {'kamar_id': kamarId, 'fasilitas_id': fId})
+            .toList();
+        await _client.from('kamar_fasilitas').insert(rows);
+      }
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (syncKamarFasilitas): $e');
+      rethrow;
+    }
+  }
+
+  static Future<List<String>> fetchKamarFasilitasIds(String kamarId) async {
+    try {
+      final response = await _client
+          .from('kamar_fasilitas')
+          .select('fasilitas_id')
+          .eq('kamar_id', kamarId);
+      return response.map((row) => row['fasilitas_id'] as String).toList();
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchKamarFasilitasIds): $e');
+      return [];
+    }
+  }
+
   // ══════════════════════════════════════════════════════════════
   // ── PENYEWA ───────────────────────────────────────────────────
   // ══════════════════════════════════════════════════════════════
 
   /// Hitung jumlah penyewa aktif
-  static Future<int> countPenyewaAktif() async {
+  static Future<int> HitungPenyewaAktif() async {
     try {
       final response = await _client
           .from('penyewa')
@@ -297,7 +560,7 @@ class SupabaseService {
           .eq('status_aktif', true);
       return response.length;
     } catch (e) {
-      debugPrint('🔥 ERROR Supabase (countPenyewaAktif): $e');
+      debugPrint('🔥 ERROR Supabase (HitungPenyewaAktif): $e');
       return 0;
     }
   }
@@ -326,7 +589,7 @@ class SupabaseService {
     try {
       final response = await _client
           .from('kamar')
-          .select()
+          .select('*, branch(nama_branch), kamar_fasilitas(fasilitas(*))')
           .eq('id_kamar', kamarId)
           .maybeSingle();
       if (response != null) {
@@ -426,6 +689,276 @@ class SupabaseService {
     } catch (e) {
       debugPrint('🔥 ERROR Supabase (fetchPembayaranByTagihanId): $e');
       return [];
+    }
+  }
+
+  /// Upload bukti bayar ke Supabase Storage (bucket: bukti-bayar)
+  static Future<String?> uploadBuktiBayar(File file, String tagihanId) async {
+    try {
+      final ext = file.path.split('.').last.toLowerCase();
+
+      // Tentukan content-type berdasarkan ekstensi
+      String contentType;
+      switch (ext) {
+        case 'jpg':
+        case 'jpeg':
+          contentType = 'image/jpeg';
+          break;
+        case 'png':
+          contentType = 'image/png';
+          break;
+        case 'webp':
+          contentType = 'image/webp';
+          break;
+        case 'heic':
+        case 'heif':
+          contentType = 'image/heic';
+          break;
+        default:
+          contentType = 'image/jpeg';
+      }
+
+      final path = '$tagihanId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+      final bytes = await file.readAsBytes();
+      debugPrint(
+          '📤 Uploading bukti bayar: path=$path, size=${bytes.length} bytes, contentType=$contentType');
+
+      await _client.storage.from('bukti-bayar').uploadBinary(
+            path,
+            bytes,
+            fileOptions: FileOptions(
+              contentType: contentType,
+              upsert: true,
+            ),
+          );
+
+      final publicUrl = _client.storage.from('bukti-bayar').getPublicUrl(path);
+      debugPrint('✅ Upload berhasil: $publicUrl');
+      return publicUrl;
+    } catch (e, stackTrace) {
+      debugPrint('🔥 ERROR Supabase (uploadBuktiBayar): $e');
+      debugPrint('🔥 StackTrace: $stackTrace');
+      return null;
+    }
+  }
+
+  /// Insert pembayaran baru
+  static Future<void> addPembayaran(Map<String, dynamic> data) async {
+    try {
+      await _client.from('pembayaran').insert(data);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (addPembayaran): $e');
+      rethrow;
+    }
+  }
+
+  /// Update pembayaran (status_validasi, dll)
+  static Future<void> updatePembayaran(
+      String id, Map<String, dynamic> data) async {
+    try {
+      await _client.from('pembayaran').update(data).eq('id_pembayaran', id);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (updatePembayaran): $e');
+      rethrow;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // ── PENYEWA CRUD (Owner) ─────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════
+
+  /// Ambil semua penyewa aktif + join info user & kamar
+  static Future<List<Penyewa>> fetchPenyewaList() async {
+    try {
+      final response = await _client
+          .from('penyewa')
+          .select(
+              '*, users!penyewa_user_id_fkey(nama, email), kamar!penyewa_kamar_id_fkey(nomor_kamar, branch_id, branch(nama_branch))')
+          .isFilter('deleted_at', null)
+          .order('created_at', ascending: false);
+      return response.map((json) => Penyewa.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchPenyewaList): $e');
+      return [];
+    }
+  }
+
+  /// Tambah penyewa baru + otomatis update kamar → terisi
+  static Future<void> addPenyewa(Map<String, dynamic> data,
+      {String? userId}) async {
+    try {
+      if (userId != null) {
+        data['created_by'] = userId;
+      }
+      await _client.from('penyewa').insert(data);
+
+      // Auto-update kamar status → terisi
+      if (data['kamar_id'] != null) {
+        await updateKamarStatus(data['kamar_id'], 'terisi');
+      }
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (addPenyewa): $e');
+      rethrow;
+    }
+  }
+
+  /// Update data penyewa
+  static Future<void> updatePenyewa(String id, Map<String, dynamic> data,
+      {String? userId, String? oldKamarId}) async {
+    try {
+      data['updated_at'] = DateTime.now().toUtc().toIso8601String();
+      if (userId != null) data['updated_by'] = userId;
+      await _client.from('penyewa').update(data).eq('id_penyewa', id);
+
+      final newKamarId = data['kamar_id'] as String?;
+      if (oldKamarId != null &&
+          newKamarId != null &&
+          oldKamarId != newKamarId) {
+        await updateKamarStatus(oldKamarId, 'kosong');
+        await updateKamarStatus(newKamarId, 'terisi');
+      }
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (updatePenyewa): $e');
+      rethrow;
+    }
+  }
+
+  /// Nonaktifkan penyewa (soft-delete) + kamar → kosong
+  static Future<void> deletePenyewa(String id,
+      {String? userId, String? kamarId}) async {
+    try {
+      await _client.from('penyewa').update({
+        'status_aktif': false,
+        'deleted_at': DateTime.now().toUtc().toIso8601String(),
+        if (userId != null) 'updated_by': userId,
+      }).eq('id_penyewa', id);
+
+      // Kamar kembali kosong
+      if (kamarId != null) {
+        await updateKamarStatus(kamarId, 'kosong');
+      }
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (deletePenyewa): $e');
+      rethrow;
+    }
+  }
+
+  /// Ambil user_id yang sudah di-assign sebagai penyewa aktif
+  static Future<Set<String>> fetchAssignedUserIds() async {
+    try {
+      final response = await _client
+          .from('penyewa')
+          .select('user_id')
+          .eq('status_aktif', true)
+          .isFilter('deleted_at', null);
+      return response.map((row) => row['user_id'] as String).toSet();
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchAssignedUserIds): $e');
+      return {};
+    }
+  }
+
+  /// Ambil user dengan role tertentu + status aktif (untuk dropdown pilih penyewa)
+  static Future<List<Map<String, dynamic>>> fetchUsersByRole(
+      String role) async {
+    try {
+      return await _client
+          .from('users')
+          .select('id_user, nama, email')
+          .eq('role', role)
+          .eq('status', 'aktif')
+          .isFilter('deleted_at', null)
+          .order('nama', ascending: true);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchUsersByRole): $e');
+      return [];
+    }
+  }
+
+  /// Ambil kamar berstatus 'kosong' (untuk dropdown assign penyewa)
+  static Future<List<Kamar>> fetchAvailableKamar() async {
+    try {
+      final response = await _client
+          .from('kamar')
+          .select('*, branch(nama_branch)')
+          .eq('status', 'kosong')
+          .isFilter('deleted_at', null)
+          .order('nomor_kamar', ascending: true);
+      return response.map((json) => Kamar.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchAvailableKamar): $e');
+      return [];
+    }
+  }
+
+  /// Update status kamar
+  static Future<void> updateKamarStatus(String kamarId, String status) async {
+    try {
+      await _client
+          .from('kamar')
+          .update({'status': status}).eq('id_kamar', kamarId);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (updateKamarStatus): $e');
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // ── TAGIHAN CRUD (Owner) ─────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════
+
+  /// Ambil daftar tagihan per penyewa (untuk owner)
+  static Future<List<Tagihan>> fetchTagihanListByPenyewaId(
+      String penyewaId) async {
+    try {
+      final response = await _client
+          .from('tagihan')
+          .select()
+          .eq('penyewa_id', penyewaId)
+          .isFilter('deleted_at', null)
+          .order('bulan_tagihan', ascending: false);
+      return response.map((json) => Tagihan.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchTagihanListByPenyewaId): $e');
+      return [];
+    }
+  }
+
+  /// Tambah tagihan baru
+  static Future<void> addTagihan(Map<String, dynamic> data,
+      {String? userId}) async {
+    try {
+      if (userId != null) data['created_by'] = userId;
+      await _client.from('tagihan').insert(data);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (addTagihan): $e');
+      rethrow;
+    }
+  }
+
+  /// Update tagihan (misal: tandai lunas, edit nominal)
+  static Future<void> updateTagihan(String id, Map<String, dynamic> data,
+      {String? userId}) async {
+    try {
+      data['updated_at'] = DateTime.now().toUtc().toIso8601String();
+      if (userId != null) data['updated_by'] = userId;
+      await _client.from('tagihan').update(data).eq('id_tagihan', id);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (updateTagihan): $e');
+      rethrow;
+    }
+  }
+
+  /// Soft-delete tagihan
+  static Future<void> deleteTagihan(String id, {String? userId}) async {
+    try {
+      await _client.from('tagihan').update({
+        'deleted_at': DateTime.now().toUtc().toIso8601String(),
+        if (userId != null) 'updated_by': userId,
+      }).eq('id_tagihan', id);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (deleteTagihan): $e');
+      rethrow;
     }
   }
 }

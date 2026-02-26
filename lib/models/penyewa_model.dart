@@ -10,6 +10,12 @@ class Penyewa {
   final bool statusAktif;
   final DateTime? createdAt;
 
+  // Display fields (dari join)
+  final String? namaUser;
+  final String? emailUser;
+  final String? nomorKamar;
+  final String? namaBranch;
+
   Penyewa({
     required this.id,
     this.userId,
@@ -19,10 +25,35 @@ class Penyewa {
     this.deposit = 0,
     this.statusAktif = true,
     this.createdAt,
+    this.namaUser,
+    this.emailUser,
+    this.nomorKamar,
+    this.namaBranch,
   });
 
   /// Buat Penyewa dari JSON response Supabase
   factory Penyewa.fromJson(Map<String, dynamic> json) {
+    // Parse join data dari users
+    final usersData = json['users'];
+    String? namaUser;
+    String? emailUser;
+    if (usersData is Map) {
+      namaUser = usersData['nama'] as String?;
+      emailUser = usersData['email'] as String?;
+    }
+
+    // Parse join data dari kamar
+    final kamarData = json['kamar'];
+    String? nomorKamar;
+    String? namaBranch;
+    if (kamarData is Map) {
+      nomorKamar = kamarData['nomor_kamar'] as String?;
+      final branchData = kamarData['branch'];
+      if (branchData is Map) {
+        namaBranch = branchData['nama_branch'] as String?;
+      }
+    }
+
     return Penyewa(
       id: json['id_penyewa'] as String,
       userId: json['user_id'] as String?,
@@ -34,6 +65,10 @@ class Penyewa {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
+      namaUser: namaUser,
+      emailUser: emailUser,
+      nomorKamar: nomorKamar,
+      namaBranch: namaBranch,
     );
   }
 
@@ -58,6 +93,10 @@ class Penyewa {
     double? deposit,
     bool? statusAktif,
     DateTime? createdAt,
+    String? namaUser,
+    String? emailUser,
+    String? nomorKamar,
+    String? namaBranch,
   }) {
     return Penyewa(
       id: id ?? this.id,
@@ -68,6 +107,10 @@ class Penyewa {
       deposit: deposit ?? this.deposit,
       statusAktif: statusAktif ?? this.statusAktif,
       createdAt: createdAt ?? this.createdAt,
+      namaUser: namaUser ?? this.namaUser,
+      emailUser: emailUser ?? this.emailUser,
+      nomorKamar: nomorKamar ?? this.nomorKamar,
+      namaBranch: namaBranch ?? this.namaBranch,
     );
   }
 }

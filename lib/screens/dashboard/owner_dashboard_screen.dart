@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../models/branch_model.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/kamar_provider.dart';
+import '../../services/supabase_service.dart';
 import '../owner/management_screen.dart';
+import '../owner/penyewa_screen.dart';
 import '../owner/user_screen.dart';
-import '../owner/backup_screen.dart';
+import '../owner/lainnya_screen.dart';
 
 /// Dashboard Pemilik
 class OwnerDashboardScreen extends StatefulWidget {
@@ -17,14 +19,16 @@ class OwnerDashboardScreen extends StatefulWidget {
 }
 
 class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
-  int _currentIndex = 0;
+  // Index 2 = Dashboard (center)
+  int _currentIndex = 2;
 
+  // Urutan: Penyewa, Pengguna, Dashboard, Management, Lainnya
   final List<String> _titles = [
-    // TODO: List Menu BottomAppBar / Bottom Navigation Bar mobile ku
+    'Penyewa',
+    'Pengguna',
     'Dashboard Pemilik',
     'Management',
-    'Manajemen Pengguna',
-    'Backup Data',
+    'Lainnya',
   ];
 
   @override
@@ -33,8 +37,6 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = Provider.of<AuthProvider>(context, listen: false);
       auth.addListener(_onAuthChanged);
-
-      Provider.of<KamarProvider>(context, listen: false).fetchDashboardStats();
     });
   }
 
@@ -83,56 +85,186 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
           return IndexedStack(
             index: _currentIndex,
             children: [
-              _DashboardTab(),
-              ManagementScreen(readOnly: isAdmin),
+              PenyewaScreen(readOnly: isAdmin),
               UserScreen(readOnly: isAdmin),
-              const BackupScreen(),
+              const _DashboardTab(),
+              ManagementScreen(readOnly: isAdmin),
+              LainnyaScreen(readOnly: isAdmin),
             ],
           );
         },
       ),
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
+      // ── Bottom Nav dengan FAB tengah ──
+      // -- LETAK PERUBAHAN DISINI --
+
+      // floatingActionButton: SizedBox(
+      //   width: 56,
+      //   height: 56,
+      //   child: FloatingActionButton(
+      //     elevation: 4,
+      //     backgroundColor: _currentIndex == 2? AppColors.primary
+      //         : AppColors.primary.withOpacity(0.7),
+      //     shape: const CircleBorder(),
+      //     onPressed: () => setState(() => _currentIndex = 2),
+      //     child: Icon(
+      //       _currentIndex == 2
+      //           ? Icons.dashboard_rounded
+      //           : Icons.dashboard_outlined,
+      //       color: Colors.white,
+      //       size: 26,
+      //     ),
+      //   ),
+      // ),
+      // floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      // bottomNavigationBar: BottomAppBar(
+      //   shape: const CircularNotchedRectangle(),
+      //   notchMargin: 8,
+      //   color: Colors.white,
+      //   elevation: 12,
+      //   child: SizedBox(
+      //     height: 60,
+      //     child: Row(
+      //       mainAxisAlignment: MainAxisAlignment.spaceAround,
+      //       children: [
+      //         _navItem(
+      //             Icons.people_outline, Icons.people_rounded, 'Penyewa', 0),
+      //         _navItem(Icons.manage_accounts_outlined,
+      //             Icons.manage_accounts_rounded, 'Pengguna', 1),
+      //         const SizedBox(width: 48),
+      //         _navItem(Icons.business_outlined, Icons.business_rounded,
+      //             'Management', 3),
+      //         _navItem(Icons.more_horiz_rounded, Icons.more_horiz_rounded,
+      //             'Lainnya', 4),
+      //       ],
+      //     ),
+      //   ),
+      // ),
+
+      floatingActionButton: Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: AppColors.shadow,
-              blurRadius: 16,
-              offset: Offset(0, -4),
+              color: AppColors.primary.withOpacity(0.3),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (i) => setState(() => _currentIndex = i),
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: Colors.white,
-          selectedItemColor: AppColors.primary,
-          unselectedItemColor: AppColors.textHint,
-          selectedFontSize: 11,
-          unselectedFontSize: 11,
+        child: FloatingActionButton(
           elevation: 0,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.dashboard_rounded),
-              activeIcon: Icon(Icons.dashboard_rounded),
-              label: 'Dashboard',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.business_outlined),
-              activeIcon: Icon(Icons.business_rounded),
-              label: 'Management',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.people_outline),
-              activeIcon: Icon(Icons.people_rounded),
-              label: 'Pengguna',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.cloud_upload_outlined),
-              activeIcon: Icon(Icons.cloud_upload_rounded),
-              label: 'Backup',
-            ),
-          ],
+          backgroundColor: AppColors.primary,
+          shape: const CircleBorder(),
+          onPressed: () => setState(() => _currentIndex = 2),
+          child: Icon(
+            _currentIndex == 2
+                ? Icons.dashboard_rounded
+                : Icons.dashboard_outlined,
+            color: Colors.white,
+            size: 28,
+          ),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: BottomAppBar(
+        padding: EdgeInsets.zero,
+        shape: const CircularNotchedRectangle(),
+        notchMargin: 8,
+        color: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 16,
+        shadowColor: Colors.black.withOpacity(0.4),
+        child: SizedBox(
+          height:
+              65, // Ketinggian yang sangat proporsional (tidak kerempeng, tidak gembrot)
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _navItem(Icons.meeting_room_outlined, Icons.meeting_room_rounded,
+                  'Penyewa', 0),
+              _navItem(Icons.manage_accounts_outlined,
+                  Icons.manage_accounts_rounded, 'Pengguna', 1),
+              const SizedBox(width: 48), // Lubang transparan untuk FAB
+              _navItem(Icons.business_outlined, Icons.business_rounded,
+                  'Manajemen', 3),
+              _navItem(Icons.more_horiz_rounded, Icons.more_horiz_rounded,
+                  'Lainnya', 4),
+            ],
+          ),
+        ),
+      ),
+      // -- LETAK PERUBAHAN DISINI --
+    );
+  }
+
+  // -- LETAK PERUBAHAN DISINI --
+
+  // Widget _navItem(IconData icon, IconData activeIcon, String label, int index) {
+  //   final isActive = _currentIndex == index;
+  //   return Expanded(
+  //     child: InkWell(
+  //       onTap: () => setState(() => _currentIndex = index),
+  //       child: Column(
+  //         mainAxisSize: MainAxisSize.min,
+  //         mainAxisAlignment: MainAxisAlignment.center,
+  //         children: [
+  //           Icon(
+  //             isActive ? activeIcon : icon,
+  //             size: 22,
+  //             color: isActive ? AppColors.primary : AppColors.textHint,
+  //           ),
+  //           const SizedBox(height: 2),
+  //           Text(
+  //             label,
+  //             style: TextStyle(
+  //               fontSize: 10,
+  //               color: isActive ? AppColors.primary : AppColors.textHint,
+  //               fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+  //             ),
+  //             overflow: TextOverflow.ellipsis,
+  //           ),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
+  // -- LETAK PERUBAHAN DISINI --
+
+  Widget _navItem(IconData icon, IconData activeIcon, String label, int index) {
+    final isActive = _currentIndex == index;
+    return Expanded(
+      child: Material(
+        color: Colors
+            .transparent, // Agar background putih BottomAppBar tetap terlihat
+        child: InkWell(
+          customBorder:
+              const CircleBorder(), // Efek gelombang sentuhan berbentuk bulat halus
+          onTap: () => setState(() => _currentIndex = index),
+          child: Column(
+            mainAxisAlignment:
+                MainAxisAlignment.center, // Kunci agar konten pas di tengah bar
+            mainAxisSize: MainAxisSize.max,
+            children: [
+              Icon(
+                isActive ? activeIcon : icon,
+                size: 24,
+                color: isActive
+                    ? AppColors.primary
+                    : Colors.grey.shade400, // Abu-abu elegan jika tidak aktif
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: isActive ? AppColors.primary : Colors.grey.shade500,
+                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -168,25 +300,82 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
 }
 
 // ══════════════════════════════════════════════════════════════
-// ── Tab Dashboard (index 0) ─────────────────────────────────
+// ── Tab Dashboard (index 2) ─────────────────────────────────
 // ══════════════════════════════════════════════════════════════
 
-class _DashboardTab extends StatelessWidget {
+class _DashboardTab extends StatefulWidget {
+  const _DashboardTab();
+
+  @override
+  State<_DashboardTab> createState() => _DashboardTabState();
+}
+
+class _DashboardTabState extends State<_DashboardTab> {
+  List<Branch> _branches = [];
+  String? _selectedBranchId; // null = Semua Cabang
+  Map<String, int> _stats = {};
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    setState(() => _isLoading = true);
+
+    final branches = await SupabaseService.fetchAllBranches();
+    final stats = await SupabaseService.fetchDashboardStatsByBranch();
+
+    if (mounted) {
+      setState(() {
+        _branches = branches;
+        _stats = stats;
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _onBranchChanged(String? branchId) async {
+    setState(() {
+      _selectedBranchId = branchId;
+      _isLoading = true;
+    });
+
+    final stats =
+        await SupabaseService.fetchDashboardStatsByBranch(branchId: branchId);
+
+    if (mounted) {
+      setState(() {
+        _stats = stats;
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _handleRefresh() async {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    await auth.refreshUserData();
+    await _onBranchChanged(_selectedBranchId);
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
-    final kamarProvider = Provider.of<KamarProvider>(context);
+
+    final totalKamar = _stats['totalKamar'] ?? 0;
+    final kamarTerisi = _stats['kamarTerisi'] ?? 0;
+    final penyewaAktif = _stats['penyewaAktif'] ?? 0;
+    final tagihanPending = _stats['tagihanPending'] ?? 0;
+    final tagihanMenunggak = _stats['tagihanMenunggak'] ?? 0;
 
     return RefreshIndicator(
-      onRefresh: () async {
-        final a = Provider.of<AuthProvider>(context, listen: false);
-        final k = Provider.of<KamarProvider>(context, listen: false);
-        await Future.wait([a.refreshUserData(), k.fetchDashboardStats()]);
-      },
+      onRefresh: _handleRefresh,
       color: AppColors.primary,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 80),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -264,49 +453,93 @@ class _DashboardTab extends StatelessWidget {
 
             const SizedBox(height: 28),
 
-            // ── Quick Stats ──────────────────────────────
-            Text('Ringkasan', style: AppTextStyles.h3),
+            // ── Ringkasan Header + Dropdown ─────────────
+            Row(
+              children: [
+                Text('Ringkasan', style: AppTextStyles.h3),
+                const Spacer(),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // ── Branch Dropdown ──────────────────────────
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: AppColors.scaffoldBackground,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String?>(
+                  value: _selectedBranchId,
+                  isExpanded: true,
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                      color: AppColors.primary),
+                  style: const TextStyle(fontSize: 14, color: Colors.black87),
+                  hint: const Text('Pilih cabang untuk melihat ringkasan',
+                      style:
+                          TextStyle(fontSize: 13, color: AppColors.textHint)),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('📊 Semua Cabang',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                    ),
+                    ..._branches.map((b) => DropdownMenuItem<String?>(
+                          value: b.id,
+                          child: Text('🏠 ${b.namaBranch}'),
+                        )),
+                  ],
+                  onChanged: _onBranchChanged,
+                ),
+              ),
+            ),
+
             const SizedBox(height: 16),
 
-            Row(children: [
-              _StatCard(
-                icon: Icons.meeting_room_rounded,
-                label: 'Total Kamar',
-                value: kamarProvider.isLoading
-                    ? '...'
-                    : '${kamarProvider.totalKamar}',
-                color: AppColors.statusInfo,
-              ),
-              const SizedBox(width: 12),
-              _StatCard(
-                icon: Icons.people_rounded,
-                label: 'Penyewa Aktif',
-                value: kamarProvider.isLoading
-                    ? '...'
-                    : '${kamarProvider.penyewaAktif}',
-                color: AppColors.statusLunas,
-              ),
-            ]),
-            const SizedBox(height: 12),
-            Row(children: [
-              _StatCard(
-                icon: Icons.receipt_long_rounded,
-                label: 'Tagihan Pending',
-                value: kamarProvider.isLoading
-                    ? '...'
-                    : '${kamarProvider.tagihanPending}',
-                color: AppColors.statusPending,
-              ),
-              const SizedBox(width: 12),
-              _StatCard(
-                icon: Icons.warning_amber_rounded,
-                label: 'Menunggak',
-                value: kamarProvider.isLoading
-                    ? '...'
-                    : '${kamarProvider.tagihanMenunggak}',
-                color: AppColors.statusMenunggak,
-              ),
-            ]),
+            // ── Quick Stats ──────────────────────────────
+            if (_isLoading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(40),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else ...[
+              Row(children: [
+                _StatCard(
+                  icon: Icons.meeting_room_rounded,
+                  label: 'Kamar Terpakai',
+                  value: '$kamarTerisi / $totalKamar',
+                  color: AppColors.statusInfo,
+                ),
+                const SizedBox(width: 12),
+                _StatCard(
+                  icon: Icons.people_rounded,
+                  label: 'Penyewa Aktif',
+                  value: '$penyewaAktif',
+                  color: AppColors.statusLunas,
+                ),
+              ]),
+              const SizedBox(height: 12),
+              Row(children: [
+                _StatCard(
+                  icon: Icons.receipt_long_rounded,
+                  label: 'Tagihan Pending',
+                  value: '$tagihanPending',
+                  color: AppColors.statusPending,
+                ),
+                const SizedBox(width: 12),
+                _StatCard(
+                  icon: Icons.warning_amber_rounded,
+                  label: 'Menunggak',
+                  value: '$tagihanMenunggak',
+                  color: AppColors.statusMenunggak,
+                ),
+              ]),
+            ],
 
             const SizedBox(height: 28),
 

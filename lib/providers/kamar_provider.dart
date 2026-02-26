@@ -52,7 +52,7 @@ class KamarProvider extends ChangeNotifier {
     try {
       final results = await Future.wait([
         SupabaseService.countTotalKamar(),
-        SupabaseService.countPenyewaAktif(),
+        SupabaseService.HitungPenyewaAktif(),
         SupabaseService.countTagihanPending(),
         SupabaseService.countTagihanMenunggak(),
       ]);

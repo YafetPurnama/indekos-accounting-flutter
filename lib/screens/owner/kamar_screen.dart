@@ -5,6 +5,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../models/kamar_model.dart';
 import '../../models/branch_model.dart';
+import '../../models/fasilitas_model.dart';
 import '../../services/supabase_service.dart';
 
 /// CRUD Manajemen Kamar
@@ -25,6 +26,8 @@ class KamarScreen extends StatefulWidget {
 class _KamarScreenState extends State<KamarScreen> {
   List<Kamar> _kamarList = [];
   List<Branch> _branches = [];
+  List<Fasilitas> _allFasilitas = [];
+  Map<String, int> _fasilitasUsageCounts = {};
   bool _isLoading = false;
 
   @override
@@ -32,6 +35,7 @@ class _KamarScreenState extends State<KamarScreen> {
     super.initState();
     _loadData();
     _loadBranches();
+    _loadFasilitas();
   }
 
   Future<void> _loadBranches() async {
@@ -39,15 +43,28 @@ class _KamarScreenState extends State<KamarScreen> {
     if (mounted) setState(() => _branches = list);
   }
 
+  Future<void> _loadFasilitas() async {
+    final list = await SupabaseService.fetchAllFasilitas();
+    final counts = await SupabaseService.getFasilitasUsageCounts();
+    if (mounted) {
+      setState(() {
+        _allFasilitas = list;
+        _fasilitasUsageCounts = counts;
+      });
+    }
+  }
+
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
+    await _loadFasilitas();
     final list =
         await SupabaseService.fetchKamarList(branchId: widget.branchId);
-    if (mounted)
+    if (mounted) {
       setState(() {
         _kamarList = list;
         _isLoading = false;
       });
+    }
   }
 
   @override
@@ -160,10 +177,10 @@ class _KamarScreenState extends State<KamarScreen> {
                           style: AppTextStyles.bodySmall.copyWith(
                               color: AppColors.primary,
                               fontWeight: FontWeight.w600)),
-                      if (kamar.fasilitas != null &&
-                          kamar.fasilitas!.isNotEmpty) ...[
+                      if (kamar.fasilitasDisplay != null &&
+                          kamar.fasilitasDisplay!.isNotEmpty) ...[
                         const SizedBox(height: 2),
-                        Text(kamar.fasilitas!,
+                        Text(kamar.fasilitasDisplay!,
                             style:
                                 AppTextStyles.bodySmall.copyWith(fontSize: 11),
                             maxLines: 1,
@@ -179,8 +196,7 @@ class _KamarScreenState extends State<KamarScreen> {
                             const SizedBox(width: 3),
                             Text(kamar.branchName!,
                                 style: AppTextStyles.bodySmall.copyWith(
-                                    fontSize: 11,
-                                    color: AppColors.textHint)),
+                                    fontSize: 11, color: AppColors.textHint)),
                           ],
                         ),
                       ],
@@ -212,10 +228,9 @@ class _KamarScreenState extends State<KamarScreen> {
 
   // ── Form Bottom Sheet ─────────────────────────────────────
 
-  void _showFormSheet(BuildContext context, {Kamar? kamar}) {
+  void _showFormSheet(BuildContext context, {Kamar? kamar}) async {
     final isEdit = kamar != null;
     final nomorCtrl = TextEditingController(text: kamar?.nomorKamar ?? '');
-    final fasilitasCtrl = TextEditingController(text: kamar?.fasilitas ?? '');
     // Separator tanda pemisah nominal
     final hargaCtrl = TextEditingController(
       text: kamar != null
@@ -225,6 +240,20 @@ class _KamarScreenState extends State<KamarScreen> {
     );
     String selectedStatus = kamar?.status ?? 'kosong';
     String? selectedBranchId = kamar?.branchId ?? widget.branchId;
+
+    // Multi-select fasilitas — pre-select from existing kamar
+    Set<String> selectedFasilitasIds = {};
+    if (isEdit && kamar.fasilitasList.isNotEmpty) {
+      selectedFasilitasIds =
+          kamar.fasilitasList.map((f) => f.id).toSet();
+    }
+
+    bool hasPenyewa = false;
+    if (isEdit) {
+      hasPenyewa = await SupabaseService.CekPenyewaAktif(kamar.id);
+    }
+
+    if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
@@ -299,16 +328,207 @@ class _KamarScreenState extends State<KamarScreen> {
                 // Harga field dengan separator ribuan
                 _buildHargaField(hargaCtrl),
                 const SizedBox(height: 14),
-                _sheetField(
-                    'Fasilitas', fasilitasCtrl, 'AC, Kamar Mandi Dalam'),
+                // ── Multi-select Fasilitas ──
+                Text('Fasilitas',
+                    style: AppTextStyles.bodySmall
+                        .copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                _allFasilitas.isEmpty
+                    ? Text('Belum ada data fasilitas',
+                        style: AppTextStyles.bodySmall.copyWith(
+                            fontSize: 12, color: AppColors.textHint))
+                    : InkWell(
+                        onTap: () {
+                          showDialog(
+                            context: context,
+                            builder: (dialogCtx) {
+                              return StatefulBuilder(
+                                builder: (context, setDialogState) {
+                                  return AlertDialog(
+                                    title: Text('Pilih Fasilitas',
+                                        style: AppTextStyles.h3
+                                            .copyWith(fontSize: 18)),
+                                    contentPadding:
+                                        const EdgeInsets.only(top: 16),
+                                    content: SizedBox(
+                                      width: double.maxFinite,
+                                      child: ListView.builder(
+                                        shrinkWrap: true,
+                                        itemCount: _allFasilitas.length,
+                                        itemBuilder: (context, index) {
+                                          final f = _allFasilitas[index];
+                                          final isSelected =
+                                              selectedFasilitasIds
+                                                  .contains(f.id);
+
+                                          // Hitung sisa kapasitas berdasarkan penggunaan global
+                                          int globalUsed =
+                                              _fasilitasUsageCounts[f.id] ?? 0;
+                                          bool alreadyOwned = isEdit &&
+                                              (kamar?.fasilitasList
+                                                      .any((fk) => fk.id == f.id) ??
+                                                  false);
+                                          // Kurangi 1 jika kamar ini sudah memilikinya, karena kita menghitung yang dipakai orang lain
+                                          int usedByOthers = globalUsed -
+                                              (alreadyOwned ? 1 : 0);
+                                          int remaining = (f.qtyUnit > 0)
+                                              ? (f.qtyUnit - usedByOthers)
+                                              : 999;
+                                          bool isFull = f.qtyUnit > 0 &&
+                                              remaining <= 0;
+                                          bool isDisabled =
+                                              isFull && !isSelected;
+
+                                          // Simulasikan penggunaan saat checkbox diubah di dalam form
+                                          int simulatedUsed = usedByOthers +
+                                              (isSelected ? 1 : 0);
+
+                                          String usageText = '';
+                                          if (f.qtyUnit > 0) {
+                                            usageText =
+                                                ' (Terpakai: $simulatedUsed/${f.qtyUnit})';
+                                          }
+
+                                          return CheckboxListTile(
+                                            title: Text(
+                                              '${f.namaFasilitas}$usageText',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: isDisabled
+                                                    ? AppColors.textHint
+                                                    : Colors.black87,
+                                              ),
+                                            ),
+                                            subtitle: isDisabled
+                                                ? Text(
+                                                    'Sudah terpakai semua',
+                                                    style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: AppColors
+                                                            .statusMenunggak),
+                                                  )
+                                                : null,
+                                            value: isSelected,
+                                            activeColor: AppColors.primary,
+                                            onChanged: isDisabled
+                                                ? null
+                                                : (val) {
+                                                    setDialogState(() {
+                                                      if (val == true) {
+                                                        selectedFasilitasIds
+                                                            .add(f.id);
+                                                      } else {
+                                                        selectedFasilitasIds
+                                                            .remove(f.id);
+                                                      }
+                                                    });
+                                                    setSheetState(() {});
+                                                  },
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () {
+                                          setDialogState(() {
+                                            for (final f in _allFasilitas) {
+                                              int globalUsed =
+                                                  _fasilitasUsageCounts[f.id] ??
+                                                      0;
+                                              bool alreadyOwned = isEdit &&
+                                                  (kamar?.fasilitasList.any(
+                                                          (fk) => fk.id == f.id) ??
+                                                      false);
+                                              int usedByOthers = globalUsed -
+                                                  (alreadyOwned ? 1 : 0);
+                                              int remaining = (f.qtyUnit > 0)
+                                                  ? (f.qtyUnit - usedByOthers)
+                                                  : 999;
+                                              if (remaining > 0 ||
+                                                  selectedFasilitasIds
+                                                      .contains(f.id)) {
+                                                selectedFasilitasIds.add(f.id);
+                                              }
+                                            }
+                                          });
+                                          setSheetState(() {});
+                                        },
+                                        child: const Text('Pilih Semua'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(dialogCtx),
+                                        child: const Text('Selesai'),
+                                      )
+                                    ],
+                                  );
+                                },
+                              );
+                            },
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: AppColors.scaffoldBackground,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  selectedFasilitasIds.isEmpty
+                                      ? 'Pilih fasilitas'
+                                      : '${selectedFasilitasIds.length} fasilitas dipilih',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: selectedFasilitasIds.isEmpty
+                                        ? AppColors.textHint
+                                        : Colors.black87,
+                                  ),
+                                ),
+                              ),
+                              Icon(Icons.arrow_drop_down,
+                                  color: AppColors.textHint),
+                            ],
+                          ),
+                        ),
+                      ),
                 const SizedBox(height: 14),
                 Text('Status',
                     style: AppTextStyles.bodySmall
                         .copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
+                // Warning jika kamar sedang disewa
+                if (hasPenyewa)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline,
+                            size: 14, color: AppColors.statusPending),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Kamar sedang disewa — status tidak bisa diubah ke "Kosong"',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.statusPending,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 Row(
                   children: ['kosong', 'terisi', 'perbaikan'].map((s) {
                     final selected = selectedStatus == s;
+                    // Disable 'kosong' jika ada penyewa aktif
+                    final isLocked = hasPenyewa && s == 'kosong';
                     return Expanded(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 3),
@@ -316,15 +536,19 @@ class _KamarScreenState extends State<KamarScreen> {
                           label: Text(s[0].toUpperCase() + s.substring(1),
                               style: TextStyle(
                                   fontSize: 12,
-                                  color: selected
-                                      ? Colors.white
-                                      : AppColors.textSecondary)),
+                                  color: isLocked
+                                      ? AppColors.textHint
+                                      : selected
+                                          ? Colors.white
+                                          : AppColors.textSecondary)),
                           selected: selected,
                           selectedColor: AppColors.primary,
                           backgroundColor: AppColors.scaffoldBackground,
-                          onSelected: (_) {
-                            setSheetState(() => selectedStatus = s);
-                          },
+                          onSelected: isLocked
+                              ? null
+                              : (_) {
+                                  setSheetState(() => selectedStatus = s);
+                                },
                         ),
                       ),
                     );
@@ -355,9 +579,14 @@ class _KamarScreenState extends State<KamarScreen> {
                     Expanded(
                       flex: 2,
                       child: ElevatedButton(
-                        onPressed: () => _saveKamar(ctx, nomorCtrl.text,
-                            hargaCtrl.text, fasilitasCtrl.text, selectedStatus,
-                            editId: kamar?.id, branchId: selectedBranchId),
+                        onPressed: () => _saveKamar(
+                            ctx,
+                            nomorCtrl.text,
+                            hargaCtrl.text,
+                            selectedFasilitasIds.toList(),
+                            selectedStatus,
+                            editId: kamar?.id,
+                            branchId: selectedBranchId),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
@@ -446,7 +675,7 @@ class _KamarScreenState extends State<KamarScreen> {
   }
 
   Future<void> _saveKamar(BuildContext ctx, String nomor, String hargaStr,
-      String fasilitas, String status,
+      List<String> fasilitasIds, String status,
       {String? editId, String? branchId}) async {
     if (nomor.trim().isEmpty || hargaStr.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -472,7 +701,6 @@ class _KamarScreenState extends State<KamarScreen> {
     final data = {
       'nomor_kamar': nomor.trim(),
       'harga_per_bulan': harga,
-      'fasilitas': fasilitas.trim().isEmpty ? null : fasilitas.trim(),
       'status': status,
       if (branchId != null) 'branch_id': branchId,
     };
@@ -480,8 +708,13 @@ class _KamarScreenState extends State<KamarScreen> {
     try {
       if (editId != null) {
         await SupabaseService.updateKamar(editId, data);
+        await SupabaseService.syncKamarFasilitas(editId, fasilitasIds);
       } else {
-        await SupabaseService.addKamar(data);
+        // Insert kamar first, then get id for junction
+        final inserted = await _insertKamarAndGetId(data);
+        if (inserted != null) {
+          await SupabaseService.syncKamarFasilitas(inserted, fasilitasIds);
+        }
       }
       _loadData();
       if (mounted) {
@@ -504,7 +737,41 @@ class _KamarScreenState extends State<KamarScreen> {
     }
   }
 
-  void _confirmDelete(Kamar kamar) {
+  /// Insert kamar dan return id_kamar yang baru dibuat
+  Future<String?> _insertKamarAndGetId(Map<String, dynamic> data) async {
+    try {
+      final response = await SupabaseService.addKamarReturning(data);
+      return response;
+    } catch (e) {
+      // Fallback: insert biasa tanpa return id
+      await SupabaseService.addKamar(data);
+      return null;
+    }
+  }
+
+  void _confirmDelete(Kamar kamar) async {
+    // Cek apakah kamar masih ada penyewa aktif
+    final hasPenyewa = await SupabaseService.CekPenyewaAktif(kamar.id);
+    if (!mounted) return;
+
+    if (hasPenyewa) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Tidak Bisa Dihapus'),
+          content: Text(
+              'Kamar ${kamar.nomorKamar} masih memiliki penyewa aktif. '
+              'Nonaktifkan penyewa terlebih dahulu sebelum menghapus kamar.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Mengerti')),
+          ],
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(

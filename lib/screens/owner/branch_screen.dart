@@ -483,7 +483,29 @@ class _BranchScreenState extends State<BranchScreen> {
     }
   }
 
-  void _confirmDelete(Branch branch) {
+  void _confirmDelete(Branch branch) async {
+    // Cek apakah branch masih punya kamar
+    final kamarCount = await SupabaseService.HitungKamarByCabang(branch.id);
+    if (!mounted) return;
+
+    if (kamarCount > 0) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Tidak Bisa Dihapus'),
+          content: Text(
+              'Cabang "${branch.namaBranch}" masih memiliki $kamarCount kamar. '
+              'Hapus atau pindahkan semua kamar terlebih dahulu.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Mengerti')),
+          ],
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(

@@ -7,19 +7,20 @@ import '../models/fasilitas_model.dart';
 import '../models/penyewa_model.dart';
 import '../models/tagihan_model.dart';
 import '../models/pembayaran_model.dart';
+import '../models/laporan_model.dart';
+import '../models/biaya_operasional_model.dart';
+import '../models/potongan_deposit_model.dart';
 
 /// Service utama untuk operasi CRUD
 class SupabaseService {
   SupabaseService._();
 
-  /// Singleton client dari Supabase
   static SupabaseClient get _client => Supabase.instance.client;
 
   // ══════════════════════════════════════════════════════════════
-  // ── USERS — Sinkronisasi Firebase ↔ Supabase ─────────────────
+  // ── USERS — Sinkronisasi Firebase X Supabase ─────────────────
   // ══════════════════════════════════════════════════════════════
 
-  /// Sinkronisasi data user dari Firebase ke tabel `users` di Supabase.
   static Future<void> syncUser({
     required String firebaseUid,
     required String email,
@@ -27,6 +28,28 @@ class SupabaseService {
     required String role,
   }) async {
     try {
+      // Cek apakah sudah ada user dengan email ini (pre-registered by owner)
+      final existing = await findUserByEmail(email);
+
+      if (existing != null && existing['id_user'] != firebaseUid) {
+        // User sudah di-register oleh owner → update id_user ke Firebase UID
+        final oldId = existing['id_user'] as String;
+
+        // Update FK references dulu (penyewa.user_id)
+        await _client
+            .from('penyewa')
+            .update({'user_id': firebaseUid}).eq('user_id', oldId);
+
+        // Baru update users.id_user + nama dari Google profile
+        await _client.from('users').update({
+          'id_user': firebaseUid,
+          'nama': nama,
+        }).eq('id_user', oldId);
+
+        debugPrint('✅ Pre-registered user linked to Firebase UID: $email');
+        return;
+      }
+
       await _client.from('users').upsert({
         'id_user': firebaseUid,
         'email': email,
@@ -575,7 +598,12 @@ class SupabaseService {
           .eq('status_aktif', true)
           .maybeSingle();
       if (response != null) {
-        return Penyewa.fromJson(response);
+        final Map<String, dynamic> mutableResponse =
+            Map<String, dynamic>.from(response);
+        final totalPotongan =
+            await fetchTotalPotongan(mutableResponse['id_penyewa'] as String);
+        mutableResponse['total_deduction'] = totalPotongan;
+        return Penyewa.fromJson(mutableResponse);
       }
       return null;
     } catch (e) {
@@ -692,7 +720,6 @@ class SupabaseService {
     }
   }
 
-  /// Upload bukti bayar ke Supabase Storage (bucket: bukti-bayar)
   static Future<String?> uploadBuktiBayar(File file, String tagihanId) async {
     try {
       final ext = file.path.split('.').last.toLowerCase();
@@ -768,7 +795,7 @@ class SupabaseService {
   // ── PENYEWA CRUD (Owner) ─────────────────────────────────────
   // ══════════════════════════════════════════════════════════════
 
-  /// Ambil semua penyewa aktif + join info user & kamar
+  /// Ambil semua penyewa aktif + join info user & kamar + total deduction
   static Future<List<Penyewa>> fetchPenyewaList() async {
     try {
       final response = await _client
@@ -777,7 +804,22 @@ class SupabaseService {
               '*, users!penyewa_user_id_fkey(nama, email), kamar!penyewa_kamar_id_fkey(nomor_kamar, branch_id, branch(nama_branch))')
           .isFilter('deleted_at', null)
           .order('created_at', ascending: false);
-      return response.map((json) => Penyewa.fromJson(json)).toList();
+
+      // Ambil total deduction per penyewa
+      final deductionResponse =
+          await _client.from('potongan_deposit').select('id_penyewa, nominal');
+      final Map<String, double> deductionMap = {};
+      for (var row in deductionResponse) {
+        final pid = row['id_penyewa'] as String;
+        deductionMap[pid] = (deductionMap[pid] ?? 0) +
+            ((row['nominal'] as num?)?.toDouble() ?? 0);
+      }
+
+      return response.map((json) {
+        final pId = json['id_penyewa'] as String;
+        json['total_deduction'] = deductionMap[pId] ?? 0;
+        return Penyewa.fromJson(json);
+      }).toList();
     } catch (e) {
       debugPrint('🔥 ERROR Supabase (fetchPenyewaList): $e');
       return [];
@@ -958,6 +1000,375 @@ class SupabaseService {
       }).eq('id_tagihan', id);
     } catch (e) {
       debugPrint('🔥 ERROR Supabase (deleteTagihan): $e');
+      rethrow;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // ── LAPORAN PENYEWA ───────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════
+
+  static Future<List<LaporanModel>> fetchLaporanByPenyewaId(
+      String penyewaId) async {
+    try {
+      final response = await _client
+          .from('laporan_penyewa')
+          .select('*, kamar(nomor_kamar)')
+          .eq('penyewa_id', penyewaId)
+          .isFilter('deleted_at', null)
+          .order('created_at', ascending: false);
+      return response.map((json) => LaporanModel.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchLaporanByPenyewaId): $e');
+      return [];
+    }
+  }
+
+  static Future<List<LaporanModel>> fetchSemuaLaporan() async {
+    try {
+      final response = await _client
+          .from('laporan_penyewa')
+          .select('*, penyewa!inner(users(nama)), kamar(nomor_kamar)')
+          .isFilter('deleted_at', null)
+          .order('created_at', ascending: false);
+      return response.map((json) => LaporanModel.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchSemuaLaporan): $e');
+      return [];
+    }
+  }
+
+  static Future<void> addLaporan(Map<String, dynamic> data,
+      {String? userId}) async {
+    try {
+      if (userId != null) data['created_by'] = userId;
+      await _client.from('laporan_penyewa').insert(data);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (addLaporan): $e');
+      rethrow;
+    }
+  }
+
+  static Future<void> updateLaporanStatus(String id, String status,
+      {String? userId}) async {
+    try {
+      final data = {
+        'status': status,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      };
+      if (userId != null) data['updated_by'] = userId;
+      await _client.from('laporan_penyewa').update(data).eq('id_laporan', id);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (updateLaporanStatus): $e');
+      rethrow;
+    }
+  }
+
+  static Future<String?> uploadFotoLaporan(File file, String pathPrefix) async {
+    try {
+      final ext = file.path.split('.').last.toLowerCase();
+      String contentType = 'image/jpeg';
+      if (ext == 'png')
+        contentType = 'image/png';
+      else if (ext == 'webp')
+        contentType = 'image/webp';
+      else if (ext == 'heic' || ext == 'heif') contentType = 'image/heic';
+
+      final path =
+          'laporan/$pathPrefix/${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final bytes = await file.readAsBytes();
+
+      await _client.storage.from('bukti-bayar').uploadBinary(
+            path,
+            bytes,
+            fileOptions: FileOptions(contentType: contentType, upsert: true),
+          );
+
+      return _client.storage.from('bukti-bayar').getPublicUrl(path);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (uploadFotoLaporan): $e');
+      return null;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // ── BIAYA OPERASIONAL ───────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════
+
+  /// Ambil biaya operasional per periode, opsional filter branch
+  static Future<List<BiayaOperasional>> fetchBiayaOperasional({
+    DateTime? startDate,
+    DateTime? endDate,
+    String? branchId,
+  }) async {
+    try {
+      var query = _client
+          .from('biaya_operasional')
+          .select('*, branch(nama_branch)')
+          .isFilter('deleted_at', null);
+
+      if (startDate != null) {
+        query = query.gte(
+            'tanggal_transaksi', startDate.toIso8601String().split('T')[0]);
+      }
+      if (endDate != null) {
+        query = query.lte(
+            'tanggal_transaksi', endDate.toIso8601String().split('T')[0]);
+      }
+      if (branchId != null) {
+        query = query.eq('branch_id', branchId);
+      }
+
+      final response = await query.order('tanggal_transaksi', ascending: false);
+      return response.map((json) => BiayaOperasional.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchBiayaOperasional): $e');
+      return [];
+    }
+  }
+
+  static Future<void> TambahBiayaOperasionalBaru(Map<String, dynamic> data,
+      {String? userId}) async {
+    try {
+      if (userId != null) data['created_by'] = userId;
+      await _client.from('biaya_operasional').insert(data);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (TambahBiayaOperasionalBaru): $e');
+      rethrow;
+    }
+  }
+
+  /// Update biaya operasional
+  static Future<void> updateBiayaOperasional(
+      String id, Map<String, dynamic> data,
+      {String? userId}) async {
+    try {
+      data['updated_at'] = DateTime.now().toUtc().toIso8601String();
+      if (userId != null) data['updated_by'] = userId;
+      await _client.from('biaya_operasional').update(data).eq('id_biaya', id);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (updateBiayaOperasional): $e');
+      rethrow;
+    }
+  }
+
+  /// Soft-delete biaya operasional
+  static Future<void> deleteBiayaOperasional(String id,
+      {String? userId}) async {
+    try {
+      final data = <String, dynamic>{
+        'deleted_at': DateTime.now().toUtc().toIso8601String(),
+      };
+      if (userId != null) data['updated_by'] = userId;
+      await _client.from('biaya_operasional').update(data).eq('id_biaya', id);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (deleteBiayaOperasional): $e');
+      rethrow;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // ── LAPORAN KEUANGAN — Aggregate Queries ───────────────────
+  // ══════════════════════════════════════════════════════════════
+
+  /// Ambil pembayaran yang sudah valid di periode tertentu
+  static Future<List<Pembayaran>> fetchPembayaranValidByPeriode(
+      DateTime startDate, DateTime endDate) async {
+    try {
+      final start = startDate.toIso8601String();
+      final end = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59)
+          .toIso8601String();
+      final response = await _client
+          .from('pembayaran')
+          .select(
+              '*, tagihan!inner(nominal_kamar, total_tagihan, status_lunas, penyewa_id)')
+          .eq('status_validasi', 'valid')
+          .gte('tanggal_bayar', start)
+          .lte('tanggal_bayar', end)
+          .isFilter('deleted_at', null);
+      return response.map((json) => Pembayaran.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchPembayaranValidByPeriode): $e');
+      return [];
+    }
+  }
+
+  /// Ambil semua tagihan yang lunas di periode (berdasarkan updated_at)
+  static Future<List<Tagihan>> fetchTagihanLunasByPeriode(
+      DateTime startDate, DateTime endDate) async {
+    try {
+      final start = startDate.toIso8601String();
+      final end = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59)
+          .toIso8601String();
+      final response = await _client
+          .from('tagihan')
+          .select()
+          .eq('status_lunas', true)
+          .gte('updated_at', start)
+          .lte('updated_at', end);
+      return response.map((json) => Tagihan.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchTagihanLunasByPeriode): $e');
+      return [];
+    }
+  }
+
+  /// Ambil total pendapatan sewa dan denda di periode
+  /// Returns: {pendapatanSewa, pendapatanDenda}
+  static Future<Map<String, double>> fetchPendapatanByPeriode(
+      DateTime startDate, DateTime endDate) async {
+    try {
+      // Ambil tagihan yang bulan_tagihan-nya berada di periode
+      final startStr = startDate.toIso8601String().split('T')[0];
+      final endStr = endDate.toIso8601String().split('T')[0];
+
+      final response = await _client
+          .from('tagihan')
+          .select(
+              'nominal_kamar, total_tagihan, denda_keterlambatan, status_lunas')
+          .gte('bulan_tagihan', startStr)
+          .lte('bulan_tagihan', endStr);
+
+      double pendapatanSewa = 0;
+      double pendapatanDenda = 0;
+
+      for (var row in response) {
+        pendapatanSewa += (row['nominal_kamar'] as num).toDouble();
+        // Denda = total_tagihan - nominal_kamar (jika positif)
+        final denda = (row['total_tagihan'] as num).toDouble() -
+            (row['nominal_kamar'] as num).toDouble();
+        if (denda > 0) pendapatanDenda += denda;
+      }
+
+      return {
+        'pendapatanSewa': pendapatanSewa,
+        'pendapatanDenda': pendapatanDenda,
+      };
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchPendapatanByPeriode): $e');
+      return {'pendapatanSewa': 0, 'pendapatanDenda': 0};
+    }
+  }
+
+  /// Ambil total biaya operasional per kategori di periode
+  static Future<Map<String, double>> fetchBiayaByPeriode(
+      DateTime startDate, DateTime endDate,
+      {String? branchId}) async {
+    try {
+      final startStr = startDate.toIso8601String().split('T')[0];
+      final endStr = endDate.toIso8601String().split('T')[0];
+
+      var query = _client
+          .from('biaya_operasional')
+          .select('kategori, nominal')
+          .isFilter('deleted_at', null)
+          .gte('tanggal_transaksi', startStr)
+          .lte('tanggal_transaksi', endStr);
+
+      if (branchId != null) {
+        query = query.eq('branch_id', branchId);
+      }
+
+      final response = await query;
+      final Map<String, double> biayaPerKategori = {};
+
+      for (var row in response) {
+        final kat = row['kategori'] as String;
+        final nom = (row['nominal'] as num).toDouble();
+        biayaPerKategori[kat] = (biayaPerKategori[kat] ?? 0) + nom;
+      }
+
+      return biayaPerKategori;
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchBiayaByPeriode): $e');
+      return {};
+    }
+  }
+
+  /// Ambil deposit masuk di periode (dari penyewa baru yang created_at di periode)
+  static Future<double> fetchDepositMasukByPeriode(
+      DateTime startDate, DateTime endDate) async {
+    try {
+      final start = startDate.toIso8601String();
+      final end = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59)
+          .toIso8601String();
+
+      final response = await _client
+          .from('penyewa')
+          .select('deposit')
+          .gte('created_at', start)
+          .lte('created_at', end);
+
+      double total = 0;
+      for (var row in response) {
+        total += (row['deposit'] as num?)?.toDouble() ?? 0;
+      }
+      return total;
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchDepositMasukByPeriode): $e');
+      return 0;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // ── POTONGAN DEPOSIT — Pemotongan Deposit ────────────────────
+  // ══════════════════════════════════════════════════════════════
+
+  /// Ambil riwayat pemotongan deposit per penyewa
+  static Future<List<PotonganDeposit>> fetchPotonganDeposit(
+      String penyewaId) async {
+    try {
+      final response = await _client
+          .from('potongan_deposit')
+          .select()
+          .eq('id_penyewa', penyewaId)
+          .order('tanggal_deduction', ascending: false);
+      return response.map((json) => PotonganDeposit.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchPotonganDeposit): $e');
+      return [];
+    }
+  }
+
+  /// Hitung total pemotongan deposit per penyewa
+  static Future<double> fetchTotalPotongan(String penyewaId) async {
+    try {
+      final response = await _client
+          .from('potongan_deposit')
+          .select('nominal')
+          .eq('id_penyewa', penyewaId);
+      double total = 0;
+      for (var row in response) {
+        total += (row['nominal'] as num?)?.toDouble() ?? 0;
+      }
+      return total;
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchTotalDeduction): $e');
+      return 0;
+    }
+  }
+
+  /// Tambah pemotongan deposit baru
+  static Future<void> addPotonganDeposit(Map<String, dynamic> data,
+      {String? userId}) async {
+    try {
+      if (userId != null) data['created_by'] = userId;
+      await _client.from('potongan_deposit').insert(data);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (addPotonganDeposit): $e');
+      rethrow;
+    }
+  }
+
+  /// Hapus pemotongan deposit
+  static Future<void> deletePotonganDeposit(String id) async {
+    try {
+      await _client
+          .from('potongan_deposit')
+          .delete()
+          .eq('id_potongan_deposit', id);
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (deletePotonganDeposit): $e');
       rethrow;
     }
   }

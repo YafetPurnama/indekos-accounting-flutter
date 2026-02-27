@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart'; // NEW
+import 'package:timezone/data/latest_all.dart' as tz;
+import 'services/notification_service.dart';
 
 // Core
 import 'core/theme/app_theme.dart';
@@ -37,6 +39,9 @@ void main() async {
     url: SupabaseConfig.url,
     anonKey: SupabaseConfig.anonKey,
   );
+
+  // Init Notifications
+  await NotificationService().init();
 
   runApp(const SiaIndekosApp());
 }

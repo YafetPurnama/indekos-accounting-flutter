@@ -33,6 +33,7 @@ class TagihanScreen extends StatefulWidget {
 class _TagihanScreenState extends State<TagihanScreen> {
   List<Tagihan> _list = [];
   bool _isLoading = false;
+  double _defaultHargaKamar = 0;
 
   String get _currentUserId =>
       Provider.of<AuthProvider>(context, listen: false).user?.uid ?? '';
@@ -45,7 +46,25 @@ class _TagihanScreenState extends State<TagihanScreen> {
   @override
   void initState() {
     super.initState();
+    _defaultHargaKamar = widget.hargaKamar ?? 0;
     _loadData();
+    _fetchHargaKamar();
+  }
+
+  Future<void> _fetchHargaKamar() async {
+    if (widget.hargaKamar != null) return;
+    try {
+      final listPenyewa = await SupabaseService.fetchPenyewaList();
+      final p = listPenyewa.firstWhere((e) => e.id == widget.penyewaId);
+      if (p.kamarId != null) {
+        final k = await SupabaseService.fetchKamarById(p.kamarId!);
+        if (k != null && mounted) {
+          setState(() {
+            _defaultHargaKamar = k.hargaPerBulan;
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadData() async {
@@ -587,11 +606,12 @@ class _TagihanScreenState extends State<TagihanScreen> {
         DateTime(DateTime.now().year, DateTime.now().month, 1);
     DateTime selectedJatuhTempo = tagihan?.jatuhTempo ??
         DateTime(DateTime.now().year, DateTime.now().month, 10);
-    final nominalCtrl = TextEditingController(
-      text: tagihan != null
-          ? _ThousandFmt.format(tagihan.nominalKamar.toStringAsFixed(0))
-          : '',
-    );
+
+    // Gunakan harga kamar dari penyewa jika baru buat tagihan,
+    // Jika edit, gunakan nominal yang sudah ada di tagihan.
+    final double defaultNominal =
+        isEdit ? tagihan.nominalKamar : _defaultHargaKamar;
+
     final dendaCtrl = TextEditingController(
       text: tagihan != null && tagihan.dendaPerHari > 0
           ? _ThousandFmt.format(tagihan.dendaPerHari.toStringAsFixed(0))
@@ -604,9 +624,7 @@ class _TagihanScreenState extends State<TagihanScreen> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
-          final nominal = double.tryParse(
-                  nominalCtrl.text.replaceAll(RegExp(r'[^0-9]'), '')) ??
-              0;
+          final nominal = defaultNominal;
           final denda = double.tryParse(
                   dendaCtrl.text.replaceAll(RegExp(r'[^0-9]'), '')) ??
               0;
@@ -666,8 +684,22 @@ class _TagihanScreenState extends State<TagihanScreen> {
                   const SizedBox(height: 14),
 
                   // ── Nominal ──
-                  _buildAmountField(
-                      'Nominal Kamar *', nominalCtrl, setSheetState),
+                  Text('Nominal Kamar',
+                      style: AppTextStyles.bodySmall
+                          .copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.scaffoldBackground,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(_currFmt.format(defaultNominal),
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w500)),
+                  ),
                   const SizedBox(height: 14),
 
                   // ── Denda ──
@@ -745,7 +777,7 @@ class _TagihanScreenState extends State<TagihanScreen> {
                           onPressed: () => _saveTagihan(
                             ctx,
                             selectedMonth,
-                            nominalCtrl.text,
+                            defaultNominal,
                             dendaCtrl.text,
                             selectedJatuhTempo,
                             editId: tagihan?.id,
@@ -825,15 +857,13 @@ class _TagihanScreenState extends State<TagihanScreen> {
 
   // ── Save ────────────────────────────────────────────────────
 
-  Future<void> _saveTagihan(BuildContext ctx, DateTime bulan, String nominalStr,
+  Future<void> _saveTagihan(BuildContext ctx, DateTime bulan, double nominal,
       String dendaStr, DateTime jatuhTempo,
       {String? editId}) async {
-    final nominal =
-        double.tryParse(nominalStr.replaceAll(RegExp(r'[^0-9]'), ''));
-    if (nominal == null || nominal <= 0) {
+    if (nominal <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Nominal kamar wajib diisi'),
+            content: Text('Kamar penyewa ini belum memiliki harga sewa.'),
             backgroundColor: AppColors.statusMenunggak),
       );
       return;

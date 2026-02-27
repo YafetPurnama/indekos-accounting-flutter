@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import 'backup_screen.dart';
+import 'laporan_keuangan_screen.dart';
+import 'biaya_operasional_screen.dart';
+import 'manajemen_deposit_list_screen.dart';
 
 /// Menu overflow "Lainnya" — menampung fitur tambahan
 class LainnyaScreen extends StatelessWidget {
@@ -14,6 +17,49 @@ class LainnyaScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          _MenuTile(
+            icon: Icons.bar_chart_rounded,
+            color: const Color(0xFF34D399),
+            title: 'Laporan Keuangan',
+            subtitle: 'Cash Flow & Laba Rugi',
+            // comingSoon: true,
+            // onTap: () => _showComingSoon(context, 'Laporan Keuangan'),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const LaporanKeuanganScreen(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _MenuTile(
+            icon: Icons.build_rounded,
+            color: const Color(0xFFF59E0B),
+            title: 'Biaya Operasional',
+            subtitle: 'Listrik, air, servis AC',
+            // comingSoon: true,
+            // onTap: () => _showComingSoon(context, 'Biaya Operasional'),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const BiayaOperasionalScreen(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _MenuTile(
+            icon: Icons.account_balance_wallet_rounded,
+            color: const Color(0xFFEC4899),
+            title: 'Manajemen Deposit',
+            subtitle: 'Refund, potong, hangus',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ManajemenDepositListScreen(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           _MenuTile(
             icon: Icons.cloud_upload_rounded,
             color: const Color(0xFF5B7FFF),
@@ -30,32 +76,6 @@ class LainnyaScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          _MenuTile(
-            icon: Icons.bar_chart_rounded,
-            color: const Color(0xFF34D399),
-            title: 'Laporan Keuangan',
-            subtitle: 'Cash Flow & Laba Rugi',
-            comingSoon: true,
-            onTap: () => _showComingSoon(context, 'Laporan Keuangan'),
-          ),
-          const SizedBox(height: 12),
-          _MenuTile(
-            icon: Icons.build_rounded,
-            color: const Color(0xFFF59E0B),
-            title: 'Biaya Operasional',
-            subtitle: 'Listrik, air, servis AC',
-            comingSoon: true,
-            onTap: () => _showComingSoon(context, 'Biaya Operasional'),
-          ),
-          const SizedBox(height: 12),
-          _MenuTile(
-            icon: Icons.account_balance_wallet_rounded,
-            color: const Color(0xFFEC4899),
-            title: 'Manajemen Deposit',
-            subtitle: 'Refund, potong, hangus',
-            comingSoon: true,
-            onTap: () => _showComingSoon(context, 'Manajemen Deposit'),
-          ),
         ],
       ),
     );
@@ -126,8 +146,8 @@ class _MenuTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(title,
-                          style: AppTextStyles.labelLarge
-                              .copyWith(fontSize: 15)),
+                          style:
+                              AppTextStyles.labelLarge.copyWith(fontSize: 15)),
                       const SizedBox(height: 2),
                       Text(subtitle,
                           style: AppTextStyles.bodySmall.copyWith(
@@ -137,8 +157,8 @@ class _MenuTile extends StatelessWidget {
                 ),
                 if (comingSoon)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: AppColors.statusPending.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
@@ -150,8 +170,7 @@ class _MenuTile extends StatelessWidget {
                             fontWeight: FontWeight.w600)),
                   )
                 else
-                  Icon(Icons.chevron_right_rounded,
-                      color: AppColors.textHint),
+                  Icon(Icons.chevron_right_rounded, color: AppColors.textHint),
               ],
             ),
           ),

@@ -5,6 +5,8 @@ import '../../core/constants/app_text_styles.dart';
 import '../../models/branch_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/supabase_service.dart';
+import '../../services/notification_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../owner/management_screen.dart';
 import '../owner/penyewa_screen.dart';
 import '../owner/user_screen.dart';
@@ -31,13 +33,46 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     'Lainnya',
   ];
 
+  RealtimeChannel? _realtimeChannel;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = Provider.of<AuthProvider>(context, listen: false);
       auth.addListener(_onAuthChanged);
+
+      _setupRealtimeNotifications();
     });
+  }
+
+  void _setupRealtimeNotifications() {
+    _realtimeChannel = Supabase.instance.client
+        .channel('public:laporan_pembayaran_updates')
+        .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'laporan_penyewa',
+            callback: (payload) {
+              final judul = payload.newRecord['judul'] ?? 'Laporan Baru';
+              NotificationService().showFloatingNotification(
+                id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+                title: 'Ada Laporan Baru',
+                body: 'Keluhan: $judul',
+              );
+            })
+        .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'pembayaran',
+            callback: (payload) {
+              NotificationService().showFloatingNotification(
+                id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+                title: 'Pembayaran Baru',
+                body: 'Ada penyewa yang baru saja mengupload bukti bayar.',
+              );
+            })
+        .subscribe();
   }
 
   void _onAuthChanged() {
@@ -62,6 +97,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       final auth = Provider.of<AuthProvider>(context, listen: false);
       auth.removeListener(_onAuthChanged);
     } catch (_) {}
+    _realtimeChannel?.unsubscribe();
     super.dispose();
   }
 

@@ -10,6 +10,9 @@ class Penyewa {
   final bool statusAktif;
   final DateTime? createdAt;
 
+  /// Total pemotongan deposit dari tabel deposit_deduction (diisi terpisah)
+  final double totalDeduction;
+
   // Display fields (dari join)
   final String? namaUser;
   final String? emailUser;
@@ -23,6 +26,7 @@ class Penyewa {
     required this.tanggalMasuk,
     this.nomorWhatsapp,
     this.deposit = 0,
+    this.totalDeduction = 0,
     this.statusAktif = true,
     this.createdAt,
     this.namaUser,
@@ -30,6 +34,19 @@ class Penyewa {
     this.nomorKamar,
     this.namaBranch,
   });
+
+  /// Sisa deposit setelah pemotongan
+  double get depositSisa => deposit - totalDeduction;
+
+  /// Apakah deposit sudah pernah dipotong
+  bool get hasDeduction => totalDeduction > 0;
+
+  /// Status deposit: 'utuh', 'sebagian', atau 'habis'
+  String get depositStatus {
+    if (totalDeduction <= 0) return 'utuh';
+    if (depositSisa > 0) return 'sebagian';
+    return 'habis';
+  }
 
   /// Buat Penyewa dari JSON response Supabase
   factory Penyewa.fromJson(Map<String, dynamic> json) {
@@ -61,6 +78,7 @@ class Penyewa {
       tanggalMasuk: DateTime.parse(json['tanggal_masuk'] as String),
       nomorWhatsapp: json['nomor_whatsapp'] as String?,
       deposit: (json['deposit'] as num?)?.toDouble() ?? 0,
+      totalDeduction: (json['total_deduction'] as num?)?.toDouble() ?? 0,
       statusAktif: json['status_aktif'] as bool? ?? true,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
@@ -91,6 +109,7 @@ class Penyewa {
     DateTime? tanggalMasuk,
     String? nomorWhatsapp,
     double? deposit,
+    double? totalDeduction,
     bool? statusAktif,
     DateTime? createdAt,
     String? namaUser,
@@ -105,6 +124,7 @@ class Penyewa {
       tanggalMasuk: tanggalMasuk ?? this.tanggalMasuk,
       nomorWhatsapp: nomorWhatsapp ?? this.nomorWhatsapp,
       deposit: deposit ?? this.deposit,
+      totalDeduction: totalDeduction ?? this.totalDeduction,
       statusAktif: statusAktif ?? this.statusAktif,
       createdAt: createdAt ?? this.createdAt,
       namaUser: namaUser ?? this.namaUser,

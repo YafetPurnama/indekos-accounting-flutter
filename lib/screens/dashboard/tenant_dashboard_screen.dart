@@ -11,6 +11,8 @@ import '../../models/penyewa_model.dart';
 import '../../models/tagihan_model.dart';
 import '../../models/pembayaran_model.dart';
 import 'package:image_picker/image_picker.dart';
+import '../tenant/laporan_screen.dart';
+import '../../services/notification_service.dart';
 
 /// Dashboard Penyewa
 class TenantDashboardScreen extends StatefulWidget {
@@ -82,12 +84,42 @@ class _TenantDashboardScreenState extends State<TenantDashboardScreen> {
         ]);
         _kamar = results[0] as Kamar?;
         _tagihanAktif = results[1] as Tagihan?;
+
+        // Jadwalkan notifikasi jika ada tagihan aktif
+        if (_tagihanAktif != null && !_tagihanAktif!.statusLunas) {
+          _scheduleReminders(_tagihanAktif!.jatuhTempo);
+        }
       }
     } catch (e) {
       debugPrint('🔥 Error loading tenant data: $e');
     }
 
     if (mounted) setState(() => _isLoadingData = false);
+  }
+
+  /// Menjadwalkan reminder H-14 dan H-1
+  Future<void> _scheduleReminders(DateTime jatuhTempo) async {
+    final h14 = jatuhTempo.subtract(const Duration(days: 14));
+    final h1 = jatuhTempo.subtract(const Duration(days: 1));
+    final now = DateTime.now();
+
+    if (h14.isAfter(now)) {
+      await NotificationService().scheduleReminder(
+        id: 114,
+        title: 'Reminder Tagihan Kos',
+        body: 'Tagihan Anda akan jatuh tempo dalam 14 hari.',
+        scheduledDate: h14,
+      );
+    }
+
+    if (h1.isAfter(now)) {
+      await NotificationService().scheduleReminder(
+        id: 101,
+        title: 'Besok Jatuh Tempo!',
+        body: 'Jangan lupa bayar tagihan kos Anda agar terhindar dari denda.',
+        scheduledDate: h1,
+      );
+    }
   }
 
   /// Handle pull-to-refresh
@@ -378,8 +410,14 @@ class _TenantDashboardScreenState extends State<TenantDashboardScreen> {
                                       locale: 'id_ID',
                                       symbol: 'Rp ',
                                       decimalDigits: 0)
-                                  .format(_penyewa!.deposit)
+                                  .format(_penyewa!.depositSisa)
                               : 'Tidak ada',
+                      subtitle: (_penyewa != null && _penyewa!.hasDeduction)
+                          ? 'Lihat riwayat pemotongan'
+                          : null,
+                      onTap: (_penyewa != null && _penyewa!.hasDeduction)
+                          ? () => _showDepositHistorySheet(_penyewa!)
+                          : null,
                     ),
                     const Divider(height: 24),
                     _InfoRow(
@@ -405,39 +443,29 @@ class _TenantDashboardScreenState extends State<TenantDashboardScreen> {
                 ),
               ),
 
-              /// JANGAN DIHAPUS Desain ini untuk fitur yang sedang dikembangkan
-              // ── Coming Soon ──────────────────────────────
-              // Container(
-              //   width: double.infinity,
-              //   padding: const EdgeInsets.all(20),
-              //   decoration: BoxDecoration(
-              //     color: AppColors.cardBackground,
-              //     borderRadius: BorderRadius.circular(16),
-              //     border: Border.all(color: AppColors.border),
-              //   ),
-              //   child: Column(
-              //     children: [
-              //       Icon(
-              //         Icons.construction_rounded,
-              //         size: 48,
-              //         color: AppColors.textHint,
-              //       ),
-              //       const SizedBox(height: 12),
-              //       Text(
-              //         'Fitur Sedang Dikembangkan',
-              //         style: AppTextStyles.labelLarge.copyWith(
-              //           color: AppColors.textSecondary,
-              //         ),
-              //       ),
-              //       const SizedBox(height: 4),
-              //       Text(
-              //         'Riwayat pembayaran, notifikasi tagihan,\ndan informasi kamar lengkap',
-              //         textAlign: TextAlign.center,
-              //         style: AppTextStyles.bodySmall,
-              //       ),
-              //     ],
-              //   ),
-              // ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LaporanScreen()),
+                    );
+                  },
+                  icon: const Icon(Icons.report_problem_rounded),
+                  label: const Text('Buat Laporan / Keluhan'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
             ],
           ),
         ),
@@ -795,6 +823,15 @@ class _TenantDashboardScreenState extends State<TenantDashboardScreen> {
       }
     }
   }
+
+  void _showDepositHistorySheet(Penyewa penyewa) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _DepositHistorySheet(penyewa: penyewa),
+    );
+  }
 }
 
 class _InfoRow extends StatelessWidget {
@@ -802,17 +839,19 @@ class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
   final String? subtitle;
+  final VoidCallback? onTap;
 
   const _InfoRow({
     required this.icon,
     required this.label,
     required this.value,
     this.subtitle,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    Widget content = Row(
       crossAxisAlignment: subtitle != null || label.length > 15
           ? CrossAxisAlignment.start
           : CrossAxisAlignment.center,
@@ -851,16 +890,34 @@ class _InfoRow extends StatelessWidget {
                 Text(
                   subtitle!,
                   style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
+                    color: onTap != null ? AppColors.statusPending : AppColors.textSecondary,
                     fontSize: 13,
+                    fontWeight: onTap != null ? FontWeight.w600 : FontWeight.normal,
                   ),
                 ),
               ],
             ],
           ),
         ),
+        if (onTap != null) ...[
+          const SizedBox(width: 8),
+          const Icon(Icons.chevron_right_rounded, color: AppColors.textHint, size: 20),
+        ],
       ],
     );
+
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 2.0),
+          child: content,
+        ),
+      );
+    }
+    
+    return content;
   }
 }
 
@@ -877,6 +934,130 @@ class BoxedIcon extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
       ),
       child: Icon(icon, size: 20, color: AppColors.secondary),
+    );
+  }
+}
+
+class _DepositHistorySheet extends StatefulWidget {
+  final Penyewa penyewa;
+  const _DepositHistorySheet({required this.penyewa});
+
+  @override
+  State<_DepositHistorySheet> createState() => _DepositHistorySheetState();
+}
+
+class _DepositHistorySheetState extends State<_DepositHistorySheet> {
+  bool _isLoading = true;
+  List<dynamic> _history = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    try {
+      final data = await SupabaseService.fetchPotonganDeposit(widget.penyewa.id);
+      if (mounted) {
+        setState(() {
+          _history = data;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fmt = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+    final dateFmt = DateFormat('dd MMM yyyy', 'id_ID');
+
+    return Container(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text('Riwayat Pemotongan Deposit', style: AppTextStyles.h3),
+          const SizedBox(height: 16),
+          if (_isLoading)
+            const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
+          else if (_history.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Text('Tidak ada riwayat pemotongan.', style: AppTextStyles.bodyMedium),
+              ),
+            )
+          else ...[
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _history.length,
+                itemBuilder: (context, index) {
+                  final item = _history[index];
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.statusMenunggak.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.statusMenunggak.withOpacity(0.2)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              dateFmt.format(item.tanggalDeduction),
+                              style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                            ),
+                            Text(
+                              '- ${fmt.format(item.nominal)}',
+                              style: const TextStyle(
+                                  color: AppColors.statusMenunggak,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(item.alasan, style: AppTextStyles.bodySmall.copyWith(fontSize: 13, height: 1.4)),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

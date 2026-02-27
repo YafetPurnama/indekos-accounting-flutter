@@ -9,6 +9,7 @@ import '../../models/kamar_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/supabase_service.dart';
 import 'tagihan_screen.dart';
+import 'deposit_management_screen.dart';
 
 /// CRUD Penyewa — assign user ke kamar
 class PenyewaScreen extends StatefulWidget {
@@ -180,9 +181,35 @@ class _PenyewaScreenState extends State<PenyewaScreen> {
                       ),
                       if (p.deposit > 0) ...[
                         const SizedBox(height: 2),
-                        Text('Deposit: ${formatter.format(p.deposit)}',
-                            style: AppTextStyles.bodySmall.copyWith(
-                                fontSize: 11, color: AppColors.statusLunas)),
+                        Row(
+                          children: [
+                            Icon(
+                              p.hasDeduction
+                                  ? Icons.warning_amber_rounded
+                                  : Icons.account_balance_wallet_rounded,
+                              size: 11,
+                              color: p.depositStatus == 'utuh'
+                                  ? AppColors.statusLunas
+                                  : p.depositStatus == 'sebagian'
+                                      ? AppColors.statusPending
+                                      : AppColors.statusMenunggak,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              p.hasDeduction
+                                  ? 'Deposit: ${formatter.format(p.depositSisa)} / ${formatter.format(p.deposit)}'
+                                  : 'Deposit: ${formatter.format(p.deposit)}',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                fontSize: 11,
+                                color: p.depositStatus == 'utuh'
+                                    ? AppColors.statusLunas
+                                    : p.depositStatus == 'sebagian'
+                                        ? AppColors.statusPending
+                                        : AppColors.statusMenunggak,
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ],
                   ),
@@ -406,6 +433,8 @@ class _PenyewaScreenState extends State<PenyewaScreen> {
                   controller: depositCtrl,
                   keyboardType: TextInputType.number,
                   style: const TextStyle(fontSize: 14),
+                  readOnly: isEdit && penyewa.hasDeduction,
+                  enabled: !(isEdit && penyewa.hasDeduction),
                   inputFormatters: [_ThousandInputFormatter()],
                   decoration: InputDecoration(
                     hintText: '0',
@@ -413,7 +442,9 @@ class _PenyewaScreenState extends State<PenyewaScreen> {
                     hintStyle:
                         TextStyle(color: AppColors.textHint, fontSize: 13),
                     filled: true,
-                    fillColor: AppColors.scaffoldBackground,
+                    fillColor: (isEdit && penyewa.hasDeduction)
+                        ? Colors.grey.shade200
+                        : AppColors.scaffoldBackground,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none,
@@ -422,6 +453,64 @@ class _PenyewaScreenState extends State<PenyewaScreen> {
                         horizontal: 14, vertical: 14),
                   ),
                 ),
+                if (isEdit && penyewa.hasDeduction) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.statusMenunggak.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: AppColors.statusMenunggak.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline_rounded,
+                            color: AppColors.statusMenunggak, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Saldo Deposit telah terpakai karena Penyewa melakukan kesalahan / perusakan aset properti',
+                            style: TextStyle(
+                              color: AppColors.statusMenunggak,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (isEdit && penyewa.deposit > 0) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => DepositManagementScreen(
+                              penyewa: penyewa,
+                            ),
+                          ),
+                        ).then((_) => _loadData());
+                      },
+                      icon: const Icon(Icons.account_balance_wallet_rounded,
+                          size: 16),
+                      label: const Text('Kelola Deposit'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: const BorderSide(color: AppColors.primary),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
 
                 // ── Buttons ──
@@ -592,9 +681,22 @@ class _PenyewaScreenState extends State<PenyewaScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Nonaktifkan Penyewa'),
-        content: Text(
-            'Yakin nonaktifkan "${p.namaUser ?? 'Penyewa'}"? Kamar akan dikosongkan.'),
+        title: const Text('Non Aktifkan Penyewa'),
+        // content: Text(
+        //     'Yakin nonaktifkan "${p.namaUser ?? 'Penyewa'}"? Kamar akan dikosongkan.'),
+        content: RichText(
+          text: TextSpan(
+            style: Theme.of(context).textTheme.bodyMedium,
+            children: [
+              const TextSpan(text: 'Yakin non aktifkan pengguna "'),
+              TextSpan(
+                text: p.namaUser ?? 'Penyewa',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const TextSpan(text: '"? Kamar akan dikosongkan.'),
+            ],
+          ),
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),

@@ -40,10 +40,18 @@ class AuthProvider extends ChangeNotifier {
       final firebaseUser = _authService.currentFirebaseUser;
 
       if (firebaseUser != null) {
-        // User masih login, ambil data dari Firestore
         _user = await _authService.getUserData(firebaseUser.uid);
 
         if (_user != null) {
+          final supabaseUser =
+              await SupabaseService.findUserByEmail(_user!.email);
+          if (supabaseUser != null && supabaseUser['status'] == 'tidak aktif') {
+            await _forceLogout();
+            _errorMessage = 'Akun Anda dinonaktifkan.';
+            _setLoading(false);
+            return;
+          }
+
           // Mulai real-time listeners
           _startUserDataStream(firebaseUser.uid);
           _startAuthStateListener();
@@ -83,12 +91,30 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
 
+      if (supabaseUser['status'] == 'tidak aktif') {
+        await _authService.signOut();
+        _user = null;
+        _errorMessage = 'Akun Anda dinonaktifkan. Hubungi admin.';
+        _setLoading(false);
+        return false;
+      }
+
       // User terdaftar — gunakan role dari Supabase
       final supabaseRole = supabaseUser['role'] as String? ?? '';
       _user = appUser.copyWith(
           role: supabaseRole.isNotEmpty ? supabaseRole : appUser.role);
 
-      // Mulai real-time listeners
+      // Sync role ke Firestore SEBELUM start listener,
+      // agar real-time stream tidak overwrite role dengan null
+      if (supabaseRole.isNotEmpty) {
+        try {
+          await _authService.saveUserRole(appUser.uid, supabaseRole);
+        } catch (e) {
+          debugPrint('⚠️ Firestore role sync gagal (non-blocking): $e');
+        }
+      }
+
+      // Mulai real-time listeners (setelah Firestore sudah punya role)
       _startUserDataStream(appUser.uid);
       _startAuthStateListener();
 
@@ -100,6 +126,16 @@ class AuthProvider extends ChangeNotifier {
           nama: appUser.displayName,
           role: supabaseRole.isNotEmpty ? supabaseRole : (appUser.role ?? ''),
         );
+
+        // Re-fetch data Supabase setelah sync (id_user mungkin sudah di-update)
+        final updatedSupabaseUser =
+            await SupabaseService.findUserByEmail(appUser.email);
+        if (updatedSupabaseUser != null) {
+          final supabaseName = updatedSupabaseUser['nama'] as String? ?? '';
+          if (supabaseName.isNotEmpty) {
+            _user = _user!.copyWith(displayName: supabaseName);
+          }
+        }
       } catch (e) {
         debugPrint('⚠️ Supabase sync gagal (non-blocking): $e');
       }
@@ -129,6 +165,13 @@ class AuthProvider extends ChangeNotifier {
         _setLoading(false);
         return false;
       }
+
+      if (userData['status'] == 'tidak aktif') {
+        _errorMessage = 'Akun Anda dinonaktifkan. Hubungi admin.';
+        _setLoading(false);
+        return false;
+      }
+
       _user = AppUser(
         uid: userData['id_user'] as String,
         email: userData['email'] as String? ?? '',
@@ -244,6 +287,14 @@ class AuthProvider extends ChangeNotifier {
         // Document sudah tidak ada di Firestore
         await _forceLogout();
       } else {
+        // Periksa status keaktifan di Supabase
+        final supabaseUser =
+            await SupabaseService.findUserByEmail(freshUser.email);
+        if (supabaseUser != null && supabaseUser['status'] == 'tidak aktif') {
+          await _forceLogout();
+          return;
+        }
+
         _user = freshUser;
         notifyListeners();
       }

@@ -238,14 +238,14 @@ class _FasilitasScreenState extends State<FasilitasScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
           if (isLoadingKamar) {
-             SupabaseService.fetchKamarByFasilitas(fasilitas.id).then((list) {
-                if (ctx.mounted) {
-                  setSheetState(() {
-                    kamarList = list;
-                    isLoadingKamar = false;
-                  });
-                }
-             });
+            SupabaseService.fetchKamarByFasilitas(fasilitas.id).then((list) {
+              if (ctx.mounted) {
+                setSheetState(() {
+                  kamarList = list;
+                  isLoadingKamar = false;
+                });
+              }
+            });
           }
 
           final int usedQty = kamarList.length;
@@ -283,8 +283,8 @@ class _FasilitasScreenState extends State<FasilitasScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
-                        child: Text('Detail Fasilitas',
-                            style: AppTextStyles.h3),
+                        child:
+                            Text('Detail Fasilitas', style: AppTextStyles.h3),
                       ),
                       if (!widget.readOnly)
                         TextButton.icon(
@@ -355,8 +355,7 @@ class _FasilitasScreenState extends State<FasilitasScreen> {
                   const SizedBox(height: 24),
                   // Info Unit
                   if (fasilitas.qtyUnit > 0) ...[
-                    Text('Status Penggunaan',
-                        style: AppTextStyles.labelLarge),
+                    Text('Status Penggunaan', style: AppTextStyles.labelLarge),
                     const SizedBox(height: 12),
                     Row(
                       children: [
@@ -396,8 +395,8 @@ class _FasilitasScreenState extends State<FasilitasScreen> {
                       child: Center(
                         child: Text(
                           'Belum ada kamar yang menggunakan fasilitas ini.',
-                          style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.textSecondary),
+                          style: AppTextStyles.bodySmall
+                              .copyWith(color: AppColors.textSecondary),
                         ),
                       ),
                     )

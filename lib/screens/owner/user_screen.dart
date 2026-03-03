@@ -483,8 +483,6 @@ class _UserScreenState extends State<UserScreen> {
       return;
     }
 
-    Navigator.pop(ctx);
-
     final data = <String, dynamic>{
       'nama': nama.trim(),
       'email': email.trim(),
@@ -495,6 +493,21 @@ class _UserScreenState extends State<UserScreen> {
 
     try {
       if (editId != null) {
+        // Cek apakah email sudah dipakai user lain
+        final existingUser = await SupabaseService.findUserByEmail(email.trim());
+        if (existingUser != null && existingUser['id_user'] != editId) {
+          Navigator.pop(ctx);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Email sudah digunakan oleh pengguna lain!'),
+                backgroundColor: AppColors.statusMenunggak,
+              ),
+            );
+          }
+          return;
+        }
+        Navigator.pop(ctx);
         await SupabaseService.updateUser(editId, data);
 
         // Sync role ke Firestore agar real-time listener ikut update
@@ -511,6 +524,21 @@ class _UserScreenState extends State<UserScreen> {
           debugPrint('⚠️ Firestore role sync gagal (non-blocking): $e');
         }
       } else {
+        // Cek apakah email sudah terdaftar
+        final existingUser = await SupabaseService.findUserByEmail(email.trim());
+        if (existingUser != null) {
+          Navigator.pop(ctx);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Email sudah terdaftar! Gunakan email lain.'),
+                backgroundColor: AppColors.statusMenunggak,
+              ),
+            );
+          }
+          return;
+        }
+        Navigator.pop(ctx);
         // Generate simple ID for new users
         data['id_user'] = 'user-${DateTime.now().millisecondsSinceEpoch}';
         await SupabaseService.addUser(data);

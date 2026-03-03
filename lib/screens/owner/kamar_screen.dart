@@ -29,6 +29,8 @@ class _KamarScreenState extends State<KamarScreen> {
   List<Fasilitas> _allFasilitas = [];
   Map<String, int> _fasilitasUsageCounts = {};
   bool _isLoading = false;
+  bool _isGridView = false; // ← toggle state
+  final _searchCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -36,6 +38,12 @@ class _KamarScreenState extends State<KamarScreen> {
     _loadData();
     _loadBranches();
     _loadFasilitas();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadBranches() async {
@@ -57,8 +65,16 @@ class _KamarScreenState extends State<KamarScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     await _loadFasilitas();
-    final list =
-        await SupabaseService.fetchKamarList(branchId: widget.branchId);
+    final query = _searchCtrl.text.trim();
+    var list = await SupabaseService.fetchKamarList(branchId: widget.branchId);
+    if (query.isNotEmpty) {
+      list = list
+          .where((k) =>
+              k.nomorKamar.toLowerCase().contains(query.toLowerCase()) ||
+              (k.branchName?.toLowerCase().contains(query.toLowerCase()) ??
+                  false))
+          .toList();
+    }
     if (mounted) {
       setState(() {
         _kamarList = list;
@@ -70,19 +86,64 @@ class _KamarScreenState extends State<KamarScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: RefreshIndicator(
-        onRefresh: _loadData,
-        color: AppColors.primary,
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _kamarList.isEmpty
-                ? _buildEmptyState()
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                    itemCount: _kamarList.length,
-                    itemBuilder: (context, index) =>
-                        _buildKamarCard(_kamarList[index]),
+      body: Column(
+        children: [
+          // ── Search Box + View Toggle ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchCtrl,
+                    onChanged: (_) => _loadData(),
+                    style: const TextStyle(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Cari kamar...',
+                      hintStyle:
+                          TextStyle(color: AppColors.textHint, fontSize: 13),
+                      prefixIcon: Icon(Icons.search_rounded,
+                          color: AppColors.textHint, size: 20),
+                      suffixIcon: _searchCtrl.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.close, size: 18),
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                _loadData();
+                              },
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: AppColors.scaffoldBackground,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                    ),
                   ),
+                ),
+                const SizedBox(width: 8),
+                _buildViewToggle(),
+              ],
+            ),
+          ),
+          // ── List / Grid ──
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _loadData,
+              color: AppColors.primary,
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _kamarList.isEmpty
+                      ? _buildEmptyState()
+                      : _isGridView
+                          ? _buildGridView()
+                          : _buildListView(),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: widget.readOnly
           ? null
@@ -117,6 +178,135 @@ class _KamarScreenState extends State<KamarScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  // ── View Toggle ────────────────────────────────────────
+  Widget _buildViewToggle() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.scaffoldBackground,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _toggleBtn(Icons.view_list_rounded, !_isGridView),
+          _toggleBtn(Icons.grid_view_rounded, _isGridView),
+        ],
+      ),
+    );
+  }
+
+  Widget _toggleBtn(IconData icon, bool active) {
+    return GestureDetector(
+      onTap: () =>
+          setState(() => _isGridView = icon == Icons.grid_view_rounded),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: active ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon,
+            size: 20, color: active ? Colors.white : AppColors.textHint),
+      ),
+    );
+  }
+
+  // ── List View ────────────────────────────────────────
+  Widget _buildListView() {
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
+      itemCount: _kamarList.length,
+      itemBuilder: (context, index) => _buildKamarCard(_kamarList[index]),
+    );
+  }
+
+  // ── Grid View ────────────────────────────────────────
+  Widget _buildGridView() {
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 0.9,
+      ),
+      itemCount: _kamarList.length,
+      itemBuilder: (context, index) => _buildKamarGridTile(_kamarList[index]),
+    );
+  }
+
+  Widget _buildKamarGridTile(Kamar kamar) {
+    final statusColor = kamar.status == 'terisi'
+        ? AppColors.statusLunas
+        : kamar.status == 'perbaikan'
+            ? AppColors.statusPending
+            : AppColors.statusInfo;
+    final formatter =
+        NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+
+    return GestureDetector(
+      onTap:
+          widget.readOnly ? null : () => _showFormSheet(context, kamar: kamar),
+      onLongPress: widget.readOnly ? null : () => _confirmDelete(kamar),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(
+                color: AppColors.shadowLight,
+                blurRadius: 8,
+                offset: Offset(0, 2)),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(Icons.meeting_room_rounded,
+                  color: statusColor, size: 26),
+            ),
+            const SizedBox(height: 8),
+            Text('Kamar ${kamar.nomorKamar}',
+                style: AppTextStyles.labelLarge.copyWith(fontSize: 13),
+                textAlign: TextAlign.center),
+            const SizedBox(height: 3),
+            Text(
+              formatter.format(kamar.hargaPerBulan),
+              style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                kamar.status[0].toUpperCase() + kamar.status.substring(1),
+                style: TextStyle(
+                    color: statusColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -244,8 +434,7 @@ class _KamarScreenState extends State<KamarScreen> {
     // Multi-select fasilitas — pre-select from existing kamar
     Set<String> selectedFasilitasIds = {};
     if (isEdit && kamar.fasilitasList.isNotEmpty) {
-      selectedFasilitasIds =
-          kamar.fasilitasList.map((f) => f.id).toSet();
+      selectedFasilitasIds = kamar.fasilitasList.map((f) => f.id).toSet();
     }
 
     bool hasPenyewa = false;
@@ -335,8 +524,8 @@ class _KamarScreenState extends State<KamarScreen> {
                 const SizedBox(height: 8),
                 _allFasilitas.isEmpty
                     ? Text('Belum ada data fasilitas',
-                        style: AppTextStyles.bodySmall.copyWith(
-                            fontSize: 12, color: AppColors.textHint))
+                        style: AppTextStyles.bodySmall
+                            .copyWith(fontSize: 12, color: AppColors.textHint))
                     : InkWell(
                         onTap: () {
                           showDialog(
@@ -365,8 +554,8 @@ class _KamarScreenState extends State<KamarScreen> {
                                           int globalUsed =
                                               _fasilitasUsageCounts[f.id] ?? 0;
                                           bool alreadyOwned = isEdit &&
-                                              (kamar?.fasilitasList
-                                                      .any((fk) => fk.id == f.id) ??
+                                              (kamar?.fasilitasList.any(
+                                                      (fk) => fk.id == f.id) ??
                                                   false);
                                           // Kurangi 1 jika kamar ini sudah memilikinya, karena kita menghitung yang dipakai orang lain
                                           int usedByOthers = globalUsed -
@@ -374,8 +563,8 @@ class _KamarScreenState extends State<KamarScreen> {
                                           int remaining = (f.qtyUnit > 0)
                                               ? (f.qtyUnit - usedByOthers)
                                               : 999;
-                                          bool isFull = f.qtyUnit > 0 &&
-                                              remaining <= 0;
+                                          bool isFull =
+                                              f.qtyUnit > 0 && remaining <= 0;
                                           bool isDisabled =
                                               isFull && !isSelected;
 
@@ -438,7 +627,8 @@ class _KamarScreenState extends State<KamarScreen> {
                                                       0;
                                               bool alreadyOwned = isEdit &&
                                                   (kamar?.fasilitasList.any(
-                                                          (fk) => fk.id == f.id) ??
+                                                          (fk) =>
+                                                              fk.id == f.id) ??
                                                       false);
                                               int usedByOthers = globalUsed -
                                                   (alreadyOwned ? 1 : 0);

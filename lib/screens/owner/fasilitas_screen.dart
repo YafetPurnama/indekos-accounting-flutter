@@ -21,12 +21,21 @@ class FasilitasScreen extends StatefulWidget {
 
 class _FasilitasScreenState extends State<FasilitasScreen> {
   List<Fasilitas> _fasilitasList = [];
+  List<Fasilitas> _filtered = [];
   bool _isLoading = false;
+  bool _isGridView = false;
+  final _searchCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -35,9 +44,19 @@ class _FasilitasScreenState extends State<FasilitasScreen> {
     if (mounted) {
       setState(() {
         _fasilitasList = list;
+        _applySearch();
         _isLoading = false;
       });
     }
+  }
+
+  void _applySearch() {
+    final q = _searchCtrl.text.trim().toLowerCase();
+    _filtered = q.isEmpty
+        ? List.from(_fasilitasList)
+        : _fasilitasList
+            .where((f) => f.namaFasilitas.toLowerCase().contains(q))
+            .toList();
   }
 
   String? get _currentUserId {
@@ -54,19 +73,64 @@ class _FasilitasScreenState extends State<FasilitasScreen> {
         NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
 
     return Scaffold(
-      body: RefreshIndicator(
-        onRefresh: _loadData,
-        color: AppColors.primary,
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _fasilitasList.isEmpty
-                ? _buildEmptyState()
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                    itemCount: _fasilitasList.length,
-                    itemBuilder: (context, index) =>
-                        _buildFasilitasCard(_fasilitasList[index], formatter),
+      body: Column(
+        children: [
+          // ── Search + Toggle ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchCtrl,
+                    onChanged: (_) => setState(_applySearch),
+                    style: const TextStyle(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Cari fasilitas...',
+                      hintStyle:
+                          TextStyle(color: AppColors.textHint, fontSize: 13),
+                      prefixIcon: Icon(Icons.search_rounded,
+                          color: AppColors.textHint, size: 20),
+                      suffixIcon: _searchCtrl.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.close, size: 18),
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                setState(_applySearch);
+                              },
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: AppColors.scaffoldBackground,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                    ),
                   ),
+                ),
+                const SizedBox(width: 8),
+                _buildViewToggle(),
+              ],
+            ),
+          ),
+          // ── List / Grid ──
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _loadData,
+              color: AppColors.primary,
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _filtered.isEmpty
+                      ? _buildEmptyState()
+                      : _isGridView
+                          ? _buildGridView(formatter)
+                          : _buildListView(formatter),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: widget.readOnly
           ? null
@@ -87,7 +151,6 @@ class _FasilitasScreenState extends State<FasilitasScreen> {
             children: [
               Icon(Icons.room_preferences_rounded,
                   size: 64, color: AppColors.textHint),
-              // Icon(Icons.wifi_rounded, size: 64, color: AppColors.textHint), ICON WIFI
               const SizedBox(height: 16),
               Text('Belum ada data fasilitas',
                   style: AppTextStyles.labelLarge
@@ -102,6 +165,161 @@ class _FasilitasScreenState extends State<FasilitasScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  // ── View Toggle ────────────────────────────────────
+  Widget _buildViewToggle() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.scaffoldBackground,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _toggleBtn(Icons.view_list_rounded, !_isGridView),
+          _toggleBtn(Icons.grid_view_rounded, _isGridView),
+        ],
+      ),
+    );
+  }
+
+  Widget _toggleBtn(IconData icon, bool active) {
+    return GestureDetector(
+      onTap: () =>
+          setState(() => _isGridView = icon == Icons.grid_view_rounded),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: active ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon,
+            size: 20, color: active ? Colors.white : AppColors.textHint),
+      ),
+    );
+  }
+
+  // ── List View ────────────────────────────────────
+  Widget _buildListView(NumberFormat formatter) {
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
+      itemCount: _filtered.length,
+      itemBuilder: (context, index) =>
+          _buildFasilitasCard(_filtered[index], formatter),
+    );
+  }
+
+  // ── Grid View ────────────────────────────────────
+  Widget _buildGridView(NumberFormat formatter) {
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 0.85,
+      ),
+      itemCount: _filtered.length,
+      itemBuilder: (context, index) =>
+          _buildFasilitasGridTile(_filtered[index], formatter),
+    );
+  }
+
+  Widget _buildFasilitasGridTile(Fasilitas fasilitas, NumberFormat formatter) {
+    final df = DateFormat('dd MMM yyyy', 'id');
+    return GestureDetector(
+      onTap: () => _showDetailSheet(context, fasilitas),
+      onLongPress: widget.readOnly ? null : () => _confirmDelete(fasilitas),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(
+                color: AppColors.shadowLight,
+                blurRadius: 8,
+                offset: Offset(0, 2)),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Stack(
+              alignment: Alignment.topRight,
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.room_preferences_rounded,
+                      color: AppColors.primary, size: 26),
+                ),
+                if (fasilitas.qtyUnit > 0)
+                  Positioned(
+                    top: -2,
+                    right: -4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text('${fasilitas.qtyUnit}',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Text(
+                fasilitas.namaFasilitas,
+                style: AppTextStyles.labelLarge.copyWith(fontSize: 12),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (fasilitas.hargaUnit > 0) ...[
+              const SizedBox(height: 3),
+              Text(
+                formatter.format(fasilitas.hargaUnit),
+                style: AppTextStyles.bodySmall.copyWith(
+                    fontSize: 10,
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600),
+              ),
+            ],
+            if (fasilitas.tanggalPembelian != null) ...[
+              const SizedBox(height: 3),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.calendar_today_outlined,
+                      size: 9, color: AppColors.textHint),
+                  const SizedBox(width: 2),
+                  Text(
+                    'Beli: ${df.format(fasilitas.tanggalPembelian!)}',
+                    style: AppTextStyles.bodySmall
+                        .copyWith(fontSize: 9, color: AppColors.textHint),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -494,7 +712,19 @@ class _FasilitasScreenState extends State<FasilitasScreen> {
         TextEditingController(text: fasilitas?.qtyUnit.toString() ?? '');
     final keteranganCtrl =
         TextEditingController(text: fasilitas?.keterangan ?? '');
+    final ueCtrl = TextEditingController(
+        text: fasilitas?.umurEkonomisTahun.toString() ?? '5');
     DateTime? selectedTanggal = fasilitas?.tanggalPembelian;
+    String selectedGolongan = 'Kustom (Isi Manual)';
+
+    // Pre-fill dropdown jenis aset
+    if (fasilitas != null) {
+      if (fasilitas.umurEkonomisTahun == 4) {
+        selectedGolongan = 'Elektronik & Perabotan Ringan (4 Tahun)';
+      } else if (fasilitas.umurEkonomisTahun == 8) {
+        selectedGolongan = 'Perabotan Berat & Mesin (8 Tahun)';
+      }
+    }
 
     showModalBottomSheet(
       context: context,
@@ -601,6 +831,151 @@ class _FasilitasScreenState extends State<FasilitasScreen> {
                   ),
                 ),
                 const SizedBox(height: 14),
+
+                // ── Golongan Aset (Card-based Selector) ──
+                Text('Pilih Pengelompokan Aset',
+                    style: AppTextStyles.bodySmall
+                        .copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                Text(
+                  'Bedasarkan Aturan "Golongan Aset (Ref. PMK 72/2023)"',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w400,
+                    // color: AppColors.textHint,
+                    color: AppColors.textHint.withOpacity(0.8),
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                ...[
+                  _GolonganOption(
+                    key: 'Elektronik & Perabotan Ringan (4 Tahun)',
+                    icon: Icons.devices_rounded,
+                    title: 'Kelompok 1 — 4 Tahun',
+                    subtitle: 'Kursi, Lampu, Kipas, Router WiFi, Setrika',
+                    color: AppColors.statusInfo,
+                  ),
+                  _GolonganOption(
+                    key: 'Perabotan Berat & Mesin (8 Tahun)',
+                    icon: Icons.kitchen_rounded,
+                    title: 'Kelompok 2 — 8 Tahun',
+                    subtitle: 'AC, TV, Lemari, Kulkas, Mesin Cuci, Dispenser',
+                    color: AppColors.secondary,
+                  ),
+                  _GolonganOption(
+                    key: 'Kustom (Isi Manual)',
+                    icon: Icons.edit_note_rounded,
+                    title: 'Kustom',
+                    subtitle: 'Isi umur ekonomis secara manual',
+                    color: AppColors.textSecondary,
+                  ),
+                ].map((opt) {
+                  final isSelected = selectedGolongan == opt.key;
+                  return GestureDetector(
+                    onTap: () {
+                      setSheetState(() {
+                        selectedGolongan = opt.key;
+                        if (opt.key ==
+                            'Elektronik & Perabotan Ringan (4 Tahun)') {
+                          ueCtrl.text = '4';
+                        } else if (opt.key ==
+                            'Perabotan Berat & Mesin (8 Tahun)') {
+                          ueCtrl.text = '8';
+                        }
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeInOut,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? opt.color.withOpacity(0.08)
+                            : AppColors.scaffoldBackground,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected ? opt.color : AppColors.border,
+                          width: isSelected ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? opt.color.withOpacity(0.15)
+                                  : AppColors.border.withOpacity(0.3),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(opt.icon,
+                                size: 20,
+                                color: isSelected
+                                    ? opt.color
+                                    : AppColors.textHint),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(opt.title,
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                      color: isSelected
+                                          ? opt.color
+                                          : AppColors.textPrimary,
+                                    )),
+                                const SizedBox(height: 2),
+                                Text(opt.subtitle,
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      fontSize: 11,
+                                      color: AppColors.textHint,
+                                    )),
+                              ],
+                            ),
+                          ),
+                          if (isSelected)
+                            Icon(Icons.check_circle_rounded,
+                                size: 20, color: opt.color),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+                const SizedBox(height: 6),
+
+                // ── Umur Ekonomis (Manual) ──
+                Text('Umur Ekonomis (Tahun) *',
+                    style: AppTextStyles.bodySmall
+                        .copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: ueCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  style: const TextStyle(fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Misal: 5',
+                    hintStyle:
+                        TextStyle(color: AppColors.textHint, fontSize: 13),
+                    filled: true,
+                    fillColor: AppColors.scaffoldBackground,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 14),
+                  ),
+                ),
+                const SizedBox(height: 14),
+
                 _sheetField('Keterangan', keteranganCtrl, 'Catatan tambahan'),
                 const SizedBox(height: 24),
                 Row(
@@ -632,6 +1007,7 @@ class _FasilitasScreenState extends State<FasilitasScreen> {
                             namaCtrl.text,
                             hargaCtrl.text,
                             qtyCtrl.text,
+                            ueCtrl.text,
                             keteranganCtrl.text,
                             selectedTanggal,
                             editId: fasilitas?.id),
@@ -751,8 +1127,14 @@ class _FasilitasScreenState extends State<FasilitasScreen> {
     );
   }
 
-  Future<void> _saveFasilitas(BuildContext ctx, String nama, String hargaStr,
-      String qtyStr, String keterangan, DateTime? tanggalPembelian,
+  Future<void> _saveFasilitas(
+      BuildContext ctx,
+      String nama,
+      String hargaStr,
+      String qtyStr,
+      String ueStr,
+      String keterangan,
+      DateTime? tanggalPembelian,
       {String? editId}) async {
     if (nama.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -762,6 +1144,17 @@ class _FasilitasScreenState extends State<FasilitasScreen> {
       );
       return;
     }
+
+    final int ue = int.tryParse(ueStr.trim()) ?? 0;
+    if (ue <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Umur Ekonomis harus lebih dari 0'),
+            backgroundColor: AppColors.statusMenunggak),
+      );
+      return;
+    }
+
     final harga =
         double.tryParse(hargaStr.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
     final qty = int.tryParse(qtyStr.trim()) ?? 0;
@@ -772,6 +1165,7 @@ class _FasilitasScreenState extends State<FasilitasScreen> {
       'nama_fasilitas': nama.trim(),
       'harga_unit': harga,
       'qty_unit': qty,
+      'umur_ekonomis_tahun': ue,
       'keterangan_fasilitas':
           keterangan.trim().isEmpty ? null : keterangan.trim(),
       'tanggal_pembelian': tanggalPembelian != null
@@ -874,4 +1268,21 @@ class _ThousandSeparatorFormatter extends TextInputFormatter {
     }
     return buffer.toString();
   }
+}
+
+/// Data model for selectable Golongan Aset option cards
+class _GolonganOption {
+  final String key;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+
+  const _GolonganOption({
+    required this.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+  });
 }

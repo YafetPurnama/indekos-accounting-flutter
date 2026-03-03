@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../constants/app_colors.dart';
 
-/// Theme : SIA Indekos Mobile.
+/// Theme : Aps Mobile Indekos
 class AppTheme {
   AppTheme._();
 
@@ -37,36 +37,25 @@ class AppTheme {
       // ── Text Theme ──────────────────────────────────────────
       textTheme: GoogleFonts.poppinsTextTheme().copyWith(
         headlineLarge: GoogleFonts.poppins(
-          fontSize: 32,
-          fontWeight: FontWeight.w700,
-          color: AppColors.textPrimary,
-        ),
+            fontSize: 32,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary),
         headlineMedium: GoogleFonts.poppins(
-          fontSize: 24,
-          fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary,
-        ),
+            fontSize: 24,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary),
         headlineSmall: GoogleFonts.poppins(
-          fontSize: 20,
-          fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary,
-        ),
-        bodyLarge: GoogleFonts.poppins(
-          fontSize: 16,
-          color: AppColors.textPrimary,
-        ),
-        bodyMedium: GoogleFonts.poppins(
-          fontSize: 14,
-          color: AppColors.textPrimary,
-        ),
-        bodySmall: GoogleFonts.poppins(
-          fontSize: 12,
-          color: AppColors.textSecondary,
-        ),
-        labelLarge: GoogleFonts.poppins(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-        ),
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary),
+        bodyLarge:
+            GoogleFonts.poppins(fontSize: 16, color: AppColors.textPrimary),
+        bodyMedium:
+            GoogleFonts.poppins(fontSize: 14, color: AppColors.textPrimary),
+        bodySmall:
+            GoogleFonts.poppins(fontSize: 12, color: AppColors.textSecondary),
+        labelLarge:
+            GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
       ),
 
       // ── AppBar ──────────────────────────────────────────────
@@ -91,22 +80,27 @@ class AppTheme {
           elevation: 2,
           shadowColor: AppColors.shadow,
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          textStyle: GoogleFonts.poppins(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          textStyle:
+              GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
         ),
       ),
 
-      // ── Card ────────────────────────────────────────────────
-      cardTheme: CardTheme(
+      // CardTheme standar
+      // cardTheme: CardTheme(
+      //   elevation: 2,
+      //   shadowColor: AppColors.shadowLight,
+      //   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      //   color: AppColors.cardBackground,
+      //   surfaceTintColor: Colors.transparent,
+      // ),
+
+      cardTheme: const CardThemeData(
         elevation: 2,
         shadowColor: AppColors.shadowLight,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.all(Radius.circular(16)),
         ),
         color: AppColors.cardBackground,
         surfaceTintColor: Colors.transparent,
@@ -134,17 +128,18 @@ class AppTheme {
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: AppColors.statusMenunggak),
         ),
-        hintStyle: GoogleFonts.poppins(
-          color: AppColors.textHint,
-          fontSize: 14,
-        ),
+        hintStyle: GoogleFonts.poppins(color: AppColors.textHint, fontSize: 14),
       ),
 
-      // ── Divider ─────────────────────────────────────────────
       dividerTheme: const DividerThemeData(
         color: AppColors.divider,
         thickness: 1,
         space: 1,
+      ),
+
+      // Fix garis hitam TabBar setelah Flutter upgrade (Material 3)
+      tabBarTheme: const TabBarThemeData(
+        dividerColor: Colors.transparent,
       ),
     );
   }

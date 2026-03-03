@@ -17,8 +17,13 @@ class NotificationService {
     if (_initialized) return;
 
     tz.initializeTimeZones();
-    // Default location for timezone (bisa diatur sesuai lokasi)
-    tz.setLocalLocation(tz.getLocation('Asia/Jakarta'));
+
+    // Set lokasi waktu (WIB)
+    try {
+      tz.setLocalLocation(tz.getLocation('Asia/Jakarta'));
+    } catch (e) {
+      debugPrint('Timezone error: $e');
+    }
 
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -41,11 +46,14 @@ class NotificationService {
       },
     );
 
-    // Minta izin untuk Android 13+
-    _flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestNotificationsPermission();
+    // Request permission untuk Android 13+
+    final androidImplementation =
+        _flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+
+    if (androidImplementation != null) {
+      await androidImplementation.requestNotificationsPermission();
+    }
 
     _initialized = true;
   }
@@ -67,6 +75,7 @@ class NotificationService {
       ticker: 'ticker',
       icon: '@mipmap/ic_launcher',
     );
+
     const NotificationDetails platformChannelSpecifics =
         NotificationDetails(android: androidPlatformChannelSpecifics);
 
@@ -79,17 +88,17 @@ class NotificationService {
     );
   }
 
-  /// Menjadwalkan pengingat pada tanggal dan waktu spesifik
+  /// Menjadwalkan pengingat
   Future<void> scheduleReminder({
     required int id,
     required String title,
     required String body,
     required DateTime scheduledDate,
   }) async {
-    if (scheduledDate.isBefore(DateTime.now())) {
+    if (scheduledDate.isBefore(DateTime.now()))
       // Jika waktu sudah lewat, tidak perlu dijadwalkan
       return;
-    }
+    return;
 
     await _flutterLocalNotificationsPlugin.zonedSchedule(
       id,

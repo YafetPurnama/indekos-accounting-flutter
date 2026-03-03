@@ -23,7 +23,7 @@ class AuthService {
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
 
       if (googleUser == null) {
-        return null;
+        return null; // User membatalkan login
       }
 
       final GoogleSignInAuthentication googleAuth =
@@ -39,17 +39,15 @@ class AuthService {
 
       final User? firebaseUser = userCredential.user;
 
-      if (firebaseUser == null) {
-        return null;
-      }
+      if (firebaseUser == null) return null;
 
+      // Cek apakah user sudah ada di Firestore
       final existingUser = await getUserData(firebaseUser.uid);
-
       if (existingUser != null) {
         return existingUser;
       }
 
-      // sv data - tanpa role dulu
+      // Jika belum ada, buat user baru
       final newUser = AppUser(
         uid: firebaseUser.uid,
         email: firebaseUser.email ?? '',
@@ -67,6 +65,7 @@ class AuthService {
 
       return newUser;
     } catch (e) {
+      debugPrint("Error Google Sign In: $e");
       rethrow;
     }
   }

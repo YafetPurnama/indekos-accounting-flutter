@@ -23,6 +23,7 @@ class _BranchScreenState extends State<BranchScreen> {
   bool _hasMore = true;
   int _page = 0;
   final int _perPage = 10;
+  bool _isGridView = false; // ← toggle state
   final _searchCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
 
@@ -91,67 +92,59 @@ class _BranchScreenState extends State<BranchScreen> {
     return Scaffold(
       body: Column(
         children: [
-          // ── Search Box ─────────────────────────────────
+          // ── Search Box + View Toggle ───────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: TextField(
-              controller: _searchCtrl,
-              onChanged: (_) => _loadData(reset: true),
-              style: const TextStyle(fontSize: 14),
-              decoration: InputDecoration(
-                hintText: 'Cari cabang...',
-                hintStyle: TextStyle(color: AppColors.textHint, fontSize: 13),
-                prefixIcon: Icon(Icons.search_rounded,
-                    color: AppColors.textHint, size: 20),
-                suffixIcon: _searchCtrl.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.close, size: 18),
-                        onPressed: () {
-                          _searchCtrl.clear();
-                          _loadData(reset: true);
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: AppColors.scaffoldBackground,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchCtrl,
+                    onChanged: (_) => _loadData(reset: true),
+                    style: const TextStyle(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Cari cabang...',
+                      hintStyle:
+                          TextStyle(color: AppColors.textHint, fontSize: 13),
+                      prefixIcon: Icon(Icons.search_rounded,
+                          color: AppColors.textHint, size: 20),
+                      suffixIcon: _searchCtrl.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.close, size: 18),
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                _loadData(reset: true);
+                              },
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: AppColors.scaffoldBackground,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                    ),
+                  ),
                 ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
+                const SizedBox(width: 8),
+                // ── View Toggle Button ──
+                _buildViewToggle(),
+              ],
             ),
           ),
 
-          // ── List ───────────────────────────────────────
+          // ── List / Grid ────────────────────────────────
           Expanded(
             child: RefreshIndicator(
               onRefresh: () => _loadData(reset: true),
               color: AppColors.primary,
               child: _branchList.isEmpty && !_isLoading
                   ? _buildEmptyState()
-                  : ListView.builder(
-                      controller: _scrollCtrl,
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
-                      itemCount: _branchList.length + (_hasMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index == _branchList.length) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Center(
-                              child: SizedBox(
-                                width: 24,
-                                height: 24,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2.5),
-                              ),
-                            ),
-                          );
-                        }
-                        return _buildBranchCard(_branchList[index]);
-                      },
-                    ),
+                  : _isGridView
+                      ? _buildGridView()
+                      : _buildListView(),
             ),
           ),
         ],
@@ -194,6 +187,149 @@ class _BranchScreenState extends State<BranchScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  // ── View Toggle Button ────────────────────────────────
+  Widget _buildViewToggle() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.scaffoldBackground,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _toggleBtn(Icons.view_list_rounded, !_isGridView),
+          _toggleBtn(Icons.grid_view_rounded, _isGridView),
+        ],
+      ),
+    );
+  }
+
+  Widget _toggleBtn(IconData icon, bool active) {
+    return GestureDetector(
+      onTap: () =>
+          setState(() => _isGridView = icon == Icons.grid_view_rounded),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: active ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon,
+            size: 20, color: active ? Colors.white : AppColors.textHint),
+      ),
+    );
+  }
+
+  // ── List View ─────────────────────────────────────────
+  Widget _buildListView() {
+    return ListView.builder(
+      controller: _scrollCtrl,
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
+      itemCount: _branchList.length + (_hasMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index == _branchList.length) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+            ),
+          );
+        }
+        return _buildBranchCard(_branchList[index]);
+      },
+    );
+  }
+
+  // ── Grid View ─────────────────────────────────────────
+  Widget _buildGridView() {
+    return GridView.builder(
+      controller: _scrollCtrl,
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 1.0,
+      ),
+      itemCount: _branchList.length,
+      itemBuilder: (context, index) => _buildBranchGridTile(_branchList[index]),
+    );
+  }
+
+  Widget _buildBranchGridTile(Branch branch) {
+    return GestureDetector(
+      onTap: () => _openKamarForBranch(branch),
+      onLongPress: widget.readOnly
+          ? null
+          : () => _showFormSheet(context, branch: branch),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(
+                color: AppColors.shadowLight,
+                blurRadius: 8,
+                offset: Offset(0, 2)),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.apartment_rounded,
+                  color: AppColors.primary, size: 28),
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                branch.namaBranch,
+                style: AppTextStyles.labelLarge.copyWith(fontSize: 13),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (branch.kota != null && branch.kota!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.location_on_outlined,
+                      size: 11, color: AppColors.textHint),
+                  const SizedBox(width: 2),
+                  Flexible(
+                    child: Text(
+                      branch.kota!,
+                      style: AppTextStyles.bodySmall
+                          .copyWith(fontSize: 10, color: AppColors.textHint),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 6),
+            Icon(Icons.chevron_right_rounded,
+                size: 16, color: AppColors.textHint),
+          ],
+        ),
+      ),
     );
   }
 

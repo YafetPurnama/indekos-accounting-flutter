@@ -50,8 +50,10 @@ analyze_result.txt
 # Firebase Secret Key
 android/app/google-services.json
 
-# 🔒 Supabase
+# 🔒 Database
 .env
 
 # Local SDK paths
 android/local.properties
+
+analyze.txt

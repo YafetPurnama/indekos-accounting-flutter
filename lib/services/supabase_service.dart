@@ -41,10 +41,8 @@ class SupabaseService {
             .update({'user_id': firebaseUid}).eq('user_id', oldId);
 
         // Baru update users.id_user + nama dari Google profile
-        await _client.from('users').update({
-          'id_user': firebaseUid,
-          'nama': nama,
-        }).eq('id_user', oldId);
+        await _client.from('users').update(
+            {'id_user': firebaseUid, 'nama': nama}).eq('id_user', oldId);
 
         debugPrint('✅ Pre-registered user linked to Firebase UID: $email');
         return;
@@ -66,7 +64,7 @@ class SupabaseService {
   static Future<Map<String, dynamic>?> findUserByEmail(String email) async {
     try {
       final response =
-          await _client.from('users').select().eq('email', email).maybeSingle();
+          await _client.from('users').select().eq('email', email).limit(1).maybeSingle();
       return response;
     } catch (e) {
       debugPrint('🔥 ERROR Supabase (findUserByEmail): $e');
@@ -190,8 +188,10 @@ class SupabaseService {
   }
 
   /// Tambah branch baru
-  static Future<void> addBranch(Map<String, dynamic> data,
-      {String? userId}) async {
+  static Future<void> addBranch(
+    Map<String, dynamic> data, {
+    String? userId,
+  }) async {
     try {
       if (userId != null) data['created_by'] = userId;
       await _client.from('branch').insert(data);
@@ -202,8 +202,11 @@ class SupabaseService {
   }
 
   /// Update branch
-  static Future<void> updateBranch(String id, Map<String, dynamic> data,
-      {String? userId}) async {
+  static Future<void> updateBranch(
+    String id,
+    Map<String, dynamic> data, {
+    String? userId,
+  }) async {
     try {
       data['updated_at'] = DateTime.now().toUtc().toIso8601String();
       if (userId != null) data['updated_by'] = userId;
@@ -354,8 +357,9 @@ class SupabaseService {
 
   /// Ambil statistik dashboard, opsional filter per branch
   /// Returns: {totalKamar, kamarTerisi, penyewaAktif, tagihanPending, tagihanMenunggak}
-  static Future<Map<String, int>> fetchDashboardStatsByBranch(
-      {String? branchId}) async {
+  static Future<Map<String, int>> fetchDashboardStatsByBranch({
+    String? branchId,
+  }) async {
     try {
       // 1. Kamar stats
       var kamarQuery = _client.from('kamar').select('id_kamar, status');
@@ -411,8 +415,11 @@ class SupabaseService {
         final tagihanData = await tagihanQuery;
         tagihanPending = tagihanData.length;
         tagihanMenunggak = tagihanData
-            .where((t) =>
-                t['jatuh_tempo'] != null && t['jatuh_tempo'].compareTo(now) < 0)
+            .where(
+              (t) =>
+                  t['jatuh_tempo'] != null &&
+                  t['jatuh_tempo'].compareTo(now) < 0,
+            )
             .length;
       } else if (branchId == null) {
         // Global fallback
@@ -422,8 +429,11 @@ class SupabaseService {
             .eq('status_lunas', false);
         tagihanPending = pendingData.length;
         tagihanMenunggak = pendingData
-            .where((t) =>
-                t['jatuh_tempo'] != null && t['jatuh_tempo'].compareTo(now) < 0)
+            .where(
+              (t) =>
+                  t['jatuh_tempo'] != null &&
+                  t['jatuh_tempo'].compareTo(now) < 0,
+            )
             .length;
       }
 
@@ -465,6 +475,46 @@ class SupabaseService {
     }
   }
 
+  /// Ambil fasilitas yang di-assign ke kamar di branch tertentu
+  /// Join: kamar_fasilitas → kamar (filter branch_id) → fasilitas
+  static Future<List<Fasilitas>> fetchFasilitasByBranch(String branchId) async {
+    try {
+      // 1. Ambil kamar_id yang ada di branch ini
+      final kamarResponse = await _client
+          .from('kamar')
+          .select('id_kamar')
+          .eq('branch_id', branchId);
+      final kamarIds =
+          kamarResponse.map((k) => k['id_kamar'] as String).toList();
+
+      if (kamarIds.isEmpty) return [];
+
+      // 2. Ambil fasilitas_id unik dari junction kamar_fasilitas
+      final junctionResponse = await _client
+          .from('kamar_fasilitas')
+          .select('fasilitas_id')
+          .inFilter('kamar_id', kamarIds);
+      final fasilitasIds = junctionResponse
+          .map((j) => j['fasilitas_id'] as String)
+          .toSet()
+          .toList();
+
+      if (fasilitasIds.isEmpty) return [];
+
+      // 3. Fetch data fasilitas lengkap berdasarkan ID
+      final fasResponse = await _client
+          .from('fasilitas')
+          .select()
+          .isFilter('deleted_at', null)
+          .inFilter('id_fasilitas', fasilitasIds)
+          .order('nama_fasilitas', ascending: true);
+      return fasResponse.map((json) => Fasilitas.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('🔥 ERROR Supabase (fetchFasilitasByBranch): $e');
+      return [];
+    }
+  }
+
   /// Ambil kamar yang menggunakan fasilitas tertentu
   static Future<List<Kamar>> fetchKamarByFasilitas(String fasilitasId) async {
     try {
@@ -498,8 +548,10 @@ class SupabaseService {
   }
 
   /// Tambah fasilitas baru
-  static Future<void> addFasilitas(Map<String, dynamic> data,
-      {String? userId}) async {
+  static Future<void> addFasilitas(
+    Map<String, dynamic> data, {
+    String? userId,
+  }) async {
     try {
       if (userId != null) data['created_by'] = userId;
       await _client.from('fasilitas').insert(data);
@@ -510,8 +562,11 @@ class SupabaseService {
   }
 
   /// Update fasilitas
-  static Future<void> updateFasilitas(String id, Map<String, dynamic> data,
-      {String? userId}) async {
+  static Future<void> updateFasilitas(
+    String id,
+    Map<String, dynamic> data, {
+    String? userId,
+  }) async {
     try {
       data['updated_at'] = DateTime.now().toUtc().toIso8601String();
       if (userId != null) data['updated_by'] = userId;
@@ -540,7 +595,9 @@ class SupabaseService {
   // ══════════════════════════════════════════════════════════════
 
   static Future<void> syncKamarFasilitas(
-      String kamarId, List<String> fasilitasIds) async {
+    String kamarId,
+    List<String> fasilitasIds,
+  ) async {
     try {
       await _client.from('kamar_fasilitas').delete().eq('kamar_id', kamarId);
 
@@ -598,10 +655,12 @@ class SupabaseService {
           .eq('status_aktif', true)
           .maybeSingle();
       if (response != null) {
-        final Map<String, dynamic> mutableResponse =
-            Map<String, dynamic>.from(response);
-        final totalPotongan =
-            await fetchTotalPotongan(mutableResponse['id_penyewa'] as String);
+        final Map<String, dynamic> mutableResponse = Map<String, dynamic>.from(
+          response,
+        );
+        final totalPotongan = await fetchTotalPotongan(
+          mutableResponse['id_penyewa'] as String,
+        );
         mutableResponse['total_deduction'] = totalPotongan;
         return Penyewa.fromJson(mutableResponse);
       }
@@ -706,7 +765,8 @@ class SupabaseService {
 
   /// Ambil daftar pembayaran berdasarkan tagihan_id
   static Future<List<Pembayaran>> fetchPembayaranByTagihanId(
-      String tagihanId) async {
+    String tagihanId,
+  ) async {
     try {
       final response = await _client
           .from('pembayaran')
@@ -749,15 +809,13 @@ class SupabaseService {
 
       final bytes = await file.readAsBytes();
       debugPrint(
-          '📤 Uploading bukti bayar: path=$path, size=${bytes.length} bytes, contentType=$contentType');
+        '📤 Uploading bukti bayar: path=$path, size=${bytes.length} bytes, contentType=$contentType',
+      );
 
       await _client.storage.from('bukti-bayar').uploadBinary(
             path,
             bytes,
-            fileOptions: FileOptions(
-              contentType: contentType,
-              upsert: true,
-            ),
+            fileOptions: FileOptions(contentType: contentType, upsert: true),
           );
 
       final publicUrl = _client.storage.from('bukti-bayar').getPublicUrl(path);
@@ -782,7 +840,9 @@ class SupabaseService {
 
   /// Update pembayaran (status_validasi, dll)
   static Future<void> updatePembayaran(
-      String id, Map<String, dynamic> data) async {
+    String id,
+    Map<String, dynamic> data,
+  ) async {
     try {
       await _client.from('pembayaran').update(data).eq('id_pembayaran', id);
     } catch (e) {
@@ -801,7 +861,8 @@ class SupabaseService {
       final response = await _client
           .from('penyewa')
           .select(
-              '*, users!penyewa_user_id_fkey(nama, email), kamar!penyewa_kamar_id_fkey(nomor_kamar, branch_id, branch(nama_branch))')
+            '*, users!penyewa_user_id_fkey(nama, email), kamar!penyewa_kamar_id_fkey(nomor_kamar, branch_id, branch(nama_branch))',
+          )
           .isFilter('deleted_at', null)
           .order('created_at', ascending: false);
 
@@ -827,8 +888,10 @@ class SupabaseService {
   }
 
   /// Tambah penyewa baru + otomatis update kamar → terisi
-  static Future<void> addPenyewa(Map<String, dynamic> data,
-      {String? userId}) async {
+  static Future<void> addPenyewa(
+    Map<String, dynamic> data, {
+    String? userId,
+  }) async {
     try {
       if (userId != null) {
         data['created_by'] = userId;
@@ -846,8 +909,12 @@ class SupabaseService {
   }
 
   /// Update data penyewa
-  static Future<void> updatePenyewa(String id, Map<String, dynamic> data,
-      {String? userId, String? oldKamarId}) async {
+  static Future<void> updatePenyewa(
+    String id,
+    Map<String, dynamic> data, {
+    String? userId,
+    String? oldKamarId,
+  }) async {
     try {
       data['updated_at'] = DateTime.now().toUtc().toIso8601String();
       if (userId != null) data['updated_by'] = userId;
@@ -867,8 +934,11 @@ class SupabaseService {
   }
 
   /// Nonaktifkan penyewa (soft-delete) + kamar → kosong
-  static Future<void> deletePenyewa(String id,
-      {String? userId, String? kamarId}) async {
+  static Future<void> deletePenyewa(
+    String id, {
+    String? userId,
+    String? kamarId,
+  }) async {
     try {
       await _client.from('penyewa').update({
         'status_aktif': false,
@@ -903,7 +973,8 @@ class SupabaseService {
 
   /// Ambil user dengan role tertentu + status aktif (untuk dropdown pilih penyewa)
   static Future<List<Map<String, dynamic>>> fetchUsersByRole(
-      String role) async {
+    String role,
+  ) async {
     try {
       return await _client
           .from('users')
@@ -951,7 +1022,8 @@ class SupabaseService {
 
   /// Ambil daftar tagihan per penyewa (untuk owner)
   static Future<List<Tagihan>> fetchTagihanListByPenyewaId(
-      String penyewaId) async {
+    String penyewaId,
+  ) async {
     try {
       final response = await _client
           .from('tagihan')
@@ -967,8 +1039,10 @@ class SupabaseService {
   }
 
   /// Tambah tagihan baru
-  static Future<void> addTagihan(Map<String, dynamic> data,
-      {String? userId}) async {
+  static Future<void> addTagihan(
+    Map<String, dynamic> data, {
+    String? userId,
+  }) async {
     try {
       if (userId != null) data['created_by'] = userId;
       await _client.from('tagihan').insert(data);
@@ -979,8 +1053,11 @@ class SupabaseService {
   }
 
   /// Update tagihan (misal: tandai lunas, edit nominal)
-  static Future<void> updateTagihan(String id, Map<String, dynamic> data,
-      {String? userId}) async {
+  static Future<void> updateTagihan(
+    String id,
+    Map<String, dynamic> data, {
+    String? userId,
+  }) async {
     try {
       data['updated_at'] = DateTime.now().toUtc().toIso8601String();
       if (userId != null) data['updated_by'] = userId;
@@ -1009,7 +1086,8 @@ class SupabaseService {
   // ══════════════════════════════════════════════════════════════
 
   static Future<List<LaporanModel>> fetchLaporanByPenyewaId(
-      String penyewaId) async {
+    String penyewaId,
+  ) async {
     try {
       final response = await _client
           .from('laporan_penyewa')
@@ -1038,8 +1116,10 @@ class SupabaseService {
     }
   }
 
-  static Future<void> addLaporan(Map<String, dynamic> data,
-      {String? userId}) async {
+  static Future<void> addLaporan(
+    Map<String, dynamic> data, {
+    String? userId,
+  }) async {
     try {
       if (userId != null) data['created_by'] = userId;
       await _client.from('laporan_penyewa').insert(data);
@@ -1049,8 +1129,11 @@ class SupabaseService {
     }
   }
 
-  static Future<void> updateLaporanStatus(String id, String status,
-      {String? userId}) async {
+  static Future<void> updateLaporanStatus(
+    String id,
+    String status, {
+    String? userId,
+  }) async {
     try {
       final data = {
         'status': status,
@@ -1109,11 +1192,15 @@ class SupabaseService {
 
       if (startDate != null) {
         query = query.gte(
-            'tanggal_transaksi', startDate.toIso8601String().split('T')[0]);
+          'tanggal_transaksi',
+          startDate.toIso8601String().split('T')[0],
+        );
       }
       if (endDate != null) {
         query = query.lte(
-            'tanggal_transaksi', endDate.toIso8601String().split('T')[0]);
+          'tanggal_transaksi',
+          endDate.toIso8601String().split('T')[0],
+        );
       }
       if (branchId != null) {
         query = query.eq('branch_id', branchId);
@@ -1127,8 +1214,10 @@ class SupabaseService {
     }
   }
 
-  static Future<void> TambahBiayaOperasionalBaru(Map<String, dynamic> data,
-      {String? userId}) async {
+  static Future<void> TambahBiayaOperasionalBaru(
+    Map<String, dynamic> data, {
+    String? userId,
+  }) async {
     try {
       if (userId != null) data['created_by'] = userId;
       await _client.from('biaya_operasional').insert(data);
@@ -1140,8 +1229,10 @@ class SupabaseService {
 
   /// Update biaya operasional
   static Future<void> updateBiayaOperasional(
-      String id, Map<String, dynamic> data,
-      {String? userId}) async {
+    String id,
+    Map<String, dynamic> data, {
+    String? userId,
+  }) async {
     try {
       data['updated_at'] = DateTime.now().toUtc().toIso8601String();
       if (userId != null) data['updated_by'] = userId;
@@ -1153,8 +1244,10 @@ class SupabaseService {
   }
 
   /// Soft-delete biaya operasional
-  static Future<void> deleteBiayaOperasional(String id,
-      {String? userId}) async {
+  static Future<void> deleteBiayaOperasional(
+    String id, {
+    String? userId,
+  }) async {
     try {
       final data = <String, dynamic>{
         'deleted_at': DateTime.now().toUtc().toIso8601String(),
@@ -1173,15 +1266,24 @@ class SupabaseService {
 
   /// Ambil pembayaran yang sudah valid di periode tertentu
   static Future<List<Pembayaran>> fetchPembayaranValidByPeriode(
-      DateTime startDate, DateTime endDate) async {
+    DateTime startDate,
+    DateTime endDate,
+  ) async {
     try {
       final start = startDate.toIso8601String();
-      final end = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59)
-          .toIso8601String();
+      final end = DateTime(
+        endDate.year,
+        endDate.month,
+        endDate.day,
+        23,
+        59,
+        59,
+      ).toIso8601String();
       final response = await _client
           .from('pembayaran')
           .select(
-              '*, tagihan!inner(nominal_kamar, total_tagihan, status_lunas, penyewa_id)')
+            '*, tagihan!inner(nominal_kamar, total_tagihan, status_lunas, penyewa_id)',
+          )
           .eq('status_validasi', 'valid')
           .gte('tanggal_bayar', start)
           .lte('tanggal_bayar', end)
@@ -1195,11 +1297,19 @@ class SupabaseService {
 
   /// Ambil semua tagihan yang lunas di periode (berdasarkan updated_at)
   static Future<List<Tagihan>> fetchTagihanLunasByPeriode(
-      DateTime startDate, DateTime endDate) async {
+    DateTime startDate,
+    DateTime endDate,
+  ) async {
     try {
       final start = startDate.toIso8601String();
-      final end = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59)
-          .toIso8601String();
+      final end = DateTime(
+        endDate.year,
+        endDate.month,
+        endDate.day,
+        23,
+        59,
+        59,
+      ).toIso8601String();
       final response = await _client
           .from('tagihan')
           .select()
@@ -1214,27 +1324,95 @@ class SupabaseService {
   }
 
   /// Ambil total pendapatan sewa dan denda di periode
-  /// Returns: {pendapatanSewa, pendapatanDenda}
-  static Future<Map<String, double>> fetchPendapatanByPeriode(
-      DateTime startDate, DateTime endDate) async {
+  /// Pendapatan sewa dihitung dari penyewa aktif yang tanggal_masuk <= endDate
+  /// Returns: {pendapatanSewa, pendapatanDenda, detailKamar}
+  static Future<Map<String, dynamic>> fetchPendapatanByPeriode(
+    DateTime startDate,
+    DateTime endDate, {
+    String? branchId,
+  }) async {
     try {
-      // Ambil tagihan yang bulan_tagihan-nya berada di periode
-      final startStr = startDate.toIso8601String().split('T')[0];
       final endStr = endDate.toIso8601String().split('T')[0];
 
-      final response = await _client
-          .from('tagihan')
+      // ── 1) Pendapatan Sewa: dari penyewa aktif ──
+      // Query penyewa yang tanggal_masuk <= akhir bulan, masih aktif
+      var queryPenyewa = _client
+          .from('penyewa')
           .select(
-              'nominal_kamar, total_tagihan, denda_keterlambatan, status_lunas')
-          .gte('bulan_tagihan', startStr)
-          .lte('bulan_tagihan', endStr);
+            'tanggal_masuk, kamar!penyewa_kamar_id_fkey(nomor_kamar, harga_per_bulan, branch_id, branch(nama_branch)), users!penyewa_user_id_fkey(nama)',
+          )
+          .eq('status_aktif', true)
+          .isFilter('deleted_at', null)
+          .lte('tanggal_masuk', endStr);
+
+      final penyewaResponse = await queryPenyewa;
 
       double pendapatanSewa = 0;
-      double pendapatanDenda = 0;
+      final List<Map<String, dynamic>> detailKamar = [];
 
-      for (var row in response) {
-        pendapatanSewa += (row['nominal_kamar'] as num).toDouble();
-        // Denda = total_tagihan - nominal_kamar (jika positif)
+      for (var row in penyewaResponse) {
+        final kamarData = row['kamar'];
+        if (kamarData == null) continue;
+
+        final kamarBranchId = kamarData['branch_id'] as String?;
+        // Filter by branch if selected
+        if (branchId != null && kamarBranchId != branchId) continue;
+
+        final harga = (kamarData['harga_per_bulan'] as num?)?.toDouble() ?? 0;
+        final nomorKamar = kamarData['nomor_kamar'] as String? ?? '-';
+        final branchData = kamarData['branch'];
+        final namaBranch = branchData is Map
+            ? (branchData['nama_branch'] as String? ?? '-')
+            : '-';
+        final userData = row['users'];
+        final namaPenyewa = userData is Map
+            ? (userData['nama'] as String? ?? 'Tanpa Nama')
+            : 'Tanpa Nama';
+        final tanggalMasuk = row['tanggal_masuk'] as String? ?? '';
+
+        pendapatanSewa += harga;
+        detailKamar.add({
+          'nomor_kamar': nomorKamar,
+          'nama_penyewa': namaPenyewa,
+          'harga': harga,
+          'tanggal_masuk': tanggalMasuk,
+          'nama_branch': namaBranch,
+        });
+      }
+
+      // Sort detail by nomor kamar
+      detailKamar.sort((a, b) =>
+          (a['nomor_kamar'] as String).compareTo(b['nomor_kamar'] as String));
+
+      // ── 2) Pendapatan Denda: dari tagihan di periode ──
+      final startStr = startDate.toIso8601String().split('T')[0];
+      final endStrTagihan = endDate.toIso8601String().split('T')[0];
+
+      // Join tagihan → penyewa → kamar for branch filtering
+      var queryDenda = _client
+          .from('tagihan')
+          .select(
+            'nominal_kamar, total_tagihan, denda_keterlambatan, penyewa!inner(kamar!penyewa_kamar_id_fkey(branch_id))',
+          )
+          .gte('bulan_tagihan', startStr)
+          .lte('bulan_tagihan', endStrTagihan);
+
+      final dendaResponse = await queryDenda;
+
+      double pendapatanDenda = 0;
+      for (var row in dendaResponse) {
+        // Filter by branch
+        if (branchId != null) {
+          final penyewaData = row['penyewa'];
+          if (penyewaData is Map) {
+            final kamarData = penyewaData['kamar'];
+            if (kamarData is Map) {
+              final tagBranchId = kamarData['branch_id'] as String?;
+              if (tagBranchId != branchId) continue;
+            }
+          }
+        }
+
         final denda = (row['total_tagihan'] as num).toDouble() -
             (row['nominal_kamar'] as num).toDouble();
         if (denda > 0) pendapatanDenda += denda;
@@ -1243,17 +1421,20 @@ class SupabaseService {
       return {
         'pendapatanSewa': pendapatanSewa,
         'pendapatanDenda': pendapatanDenda,
+        'detailKamar': detailKamar,
       };
     } catch (e) {
       debugPrint('🔥 ERROR Supabase (fetchPendapatanByPeriode): $e');
-      return {'pendapatanSewa': 0, 'pendapatanDenda': 0};
+      return {'pendapatanSewa': 0.0, 'pendapatanDenda': 0.0, 'detailKamar': <Map<String, dynamic>>[]};
     }
   }
 
   /// Ambil total biaya operasional per kategori di periode
   static Future<Map<String, double>> fetchBiayaByPeriode(
-      DateTime startDate, DateTime endDate,
-      {String? branchId}) async {
+    DateTime startDate,
+    DateTime endDate, {
+    String? branchId,
+  }) async {
     try {
       final startStr = startDate.toIso8601String().split('T')[0];
       final endStr = endDate.toIso8601String().split('T')[0];
@@ -1287,11 +1468,19 @@ class SupabaseService {
 
   /// Ambil deposit masuk di periode (dari penyewa baru yang created_at di periode)
   static Future<double> fetchDepositMasukByPeriode(
-      DateTime startDate, DateTime endDate) async {
+    DateTime startDate,
+    DateTime endDate,
+  ) async {
     try {
       final start = startDate.toIso8601String();
-      final end = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59)
-          .toIso8601String();
+      final end = DateTime(
+        endDate.year,
+        endDate.month,
+        endDate.day,
+        23,
+        59,
+        59,
+      ).toIso8601String();
 
       final response = await _client
           .from('penyewa')
@@ -1316,7 +1505,8 @@ class SupabaseService {
 
   /// Ambil riwayat pemotongan deposit per penyewa
   static Future<List<PotonganDeposit>> fetchPotonganDeposit(
-      String penyewaId) async {
+    String penyewaId,
+  ) async {
     try {
       final response = await _client
           .from('potongan_deposit')
@@ -1349,8 +1539,10 @@ class SupabaseService {
   }
 
   /// Tambah pemotongan deposit baru
-  static Future<void> addPotonganDeposit(Map<String, dynamic> data,
-      {String? userId}) async {
+  static Future<void> addPotonganDeposit(
+    Map<String, dynamic> data, {
+    String? userId,
+  }) async {
     try {
       if (userId != null) data['created_by'] = userId;
       await _client.from('potongan_deposit').insert(data);
